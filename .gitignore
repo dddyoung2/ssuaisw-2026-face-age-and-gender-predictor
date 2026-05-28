@@ -1,0 +1,6 @@
+image.jpg
+dontuse/
+__pycache__/
+
+*.pt
+*.jpg
