@@ -20,3 +20,10 @@
    ```bash
    git clone [https://github.com/유저명/ssuaisw-2026-face-age-and-gender-predictor.git](https://github.com/유저명/ssuaisw-2026-face-age-and-gender-predictor.git)
    cd ssuaisw-2026-face-age-and-gender-predictor
+```
+
+### 🧠 AI Model Weights Download
+본 프로젝트를 실행하려면 학습된 모델 가중치 파일(`.pt`)이 필요합니다. 
+아래 링크를 클릭해 다운로드한 후, 프로젝트 루트 폴더에 넣어주세요.
+
+- [ssuaisw_face_model.pt 다운로드 (Direct Link)](방금_복사한_링크_주소)
