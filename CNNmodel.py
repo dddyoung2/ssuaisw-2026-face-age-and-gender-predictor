@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-# -*- coding: cp949 -*-
 """
-============================================================
-[Cell 0] ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕沃섎챿�삕?? ?�뜝�룞�삕筌ｌ꼶�봺 �굜遺얜굡
-============================================================\
+CNNmodel.py
+===========
+얼굴 이미지 전처리, TorchScript 모델 로드, 나이/성별 추론 결과 출력 예제 코드입니다.
 """
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
@@ -108,7 +107,7 @@ class AFADPreprocessor:
         self.root = Path(root_dir)
         self.target_size = target_size
         self.samples = self._scan()
-        print(f"[AFADPreprocessor] {len(self.samples):,}�뜝占�? ?�뜝�룞�삕沃섎챿�삕?? 獄쏆뮄猿�")
+        print(f"[AFADPreprocessor] {len(self.samples):,}개 샘플을 찾았습니다.")
 
     def run(self, output_dir: str, num_workers: int = 4):
         out = Path(output_dir)
@@ -122,7 +121,7 @@ class AFADPreprocessor:
                     ok += 1
                 else:
                     fail += 1
-        print(f"[?�뜝�룞�삕�뜝占�?] ?�뜝�룞�삕�뜝占�? {ok:,}  ?�뜝�룞�삕?�뜝�룞�삕(?�뜝�룞�삕�뤃�뙋�삕?�뜝�럡而㎩뜝占�? ?�뜝�룞�삕?�뜝�룞�삕) {fail:,}")
+        print(f"[전처리 완료] 성공 {ok:,}개 / 실패 {fail:,}개")
 
     def _scan(self) -> list[tuple[Path, int]]:
         samples = []
@@ -152,7 +151,7 @@ class AFADPreprocessor:
         return True
 
 # ============================================================
-# [Cell 1] CNN 筌뤴뫀�쑞 �겫�뜄�쑎?�뜝�룞�삕�뜝占�? (筌ㅼ뮇�겧 1?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕)
+# [Cell 1] CNN 모델 로드
 # ============================================================
 import torch
 
@@ -164,18 +163,18 @@ else:
     device = torch.device("cpu")
 
 # =====================
-# .pt ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 ????�뜝�룞�삕?�뜝�룞�삕 野껋럥以� ?�뜝�룞�삕?�뜝�룞�삕
+# .pt TorchScript 모델 파일 경로
 # =====================
 model_path = "./Best_Age_Estimate_model_traced.pt"
 
-print(f"? TorchScript 筌ㅼ뮇�읅?�뜝�룞�삕 筌뤴뫀�쑞?�뜝�룞�삕 [{device.type.upper()}] 筌롫뗀�걟�뵳�딅퓠 嚥≪뮆諭� �뜝占�?...")
+print(f"TorchScript 모델을 [{device.type.upper()}] 장치로 불러오는 중...")
 model = torch.jit.load(model_path, map_location=device)
 model.eval()
-print("? 筌뤴뫀�쑞 嚥≪뮆諭� ?�뜝�룞�삕�뜝占�?! ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕 ?????? ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕�뜝占�? 筌띾뜆苑�?�뜝�룞�삕.")
+print("모델 로드 완료. 추론을 시작할 수 있습니다.")
 
 # ============================================================
-# [Cell 2] ?�뜝�룞�삕沃섎챿�삕?? ?�뜝�룞�삕筌ｌ꼶�봺 ?�뜝�룞�삕�뜝占�? (?�뜝�룞�삕嚥≪뮇�뒲 ?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕筌띾뜄�뼄 ?�뜝�룞�삕?�뜝�룞�삕)
-# image_path ?�뜝�룞�삕 ?�뜝�룞�삕筌ｌ꼶�봺?�뜝�룞�삕 ?�뜝�룞�삕沃섎챿�삕?? 野껋럥以덂뜝占�? ?�뜝�룞�삕?�뜝�룞�삕�뜝占�? [input]
+# [Cell 2] 입력 이미지 전처리
+# image_path 값을 분석할 이미지 파일 경로로 바꿔서 사용합니다.
 # ============================================================
 import cv2
 
@@ -185,21 +184,18 @@ if 'preprocessor' not in globals():
 # ===================================
 # INPUT INPUT INPUT INPUT INPUT INPUT
 image_path = "./image.jpg" or "./image.png"
-# ?�뜝�룞�삕?�뜝�룞�삕揶쏅�れ몵�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕沃섎챿�삕?? 野껋럥以� ?�뜝�룞�삕?�뜝�룞�삕
 # ===================================
 raw_image_bgr = cv2.imread(image_path)
 
 if raw_image_bgr is None:
-    print(f"? ?�뜝�룞�삕沃섎챿�삕??�뜝占�? 嚥≪뮆諭�?�뜝�룞�삕 ?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕: {image_path}")
+    print(f"이미지를 불러오지 못했습니다: {image_path}")
 else:
     result = preprocessor.process(raw_image_bgr)
     if result.success:
-        print("? ?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕筌ｌ꼶�봺 ?�뜝�룞�삕�뜝占�?! 'result' �뜝占�??�뜝�룞�삕?�뜝�룞�삕 ????�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕.")
-
-# 筌ㅼ뮇伊�?�뜝�룞�삕?�뜝�룞�삕�뜝占�? result �뜝占�??�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕筌ｌ꼶�봺?�뜝�룞�삕 ?�뜝�룞�삕沃섎챿�삕??�뜝占�? ????�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕 ???�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕�뜝占�?
+        print("얼굴 전처리 완료. result.face_crop에 전처리 결과가 저장되었습니다.")
 
 # ============================================================
-# [Cell 3] CNN 筌뤴뫀�쑞?�뜝�룞�삕 ?�뜝�룞�삕筌ｌ꼶�봺?�뜝�룞�삕 ?�뜝�룞�삕沃섎챿�삕??�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕筌β넄而� �빊�뮆�젾 + ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕域밸챶�삪 ?�뜝�룞�삕揶쏄낱�넅
+# [Cell 3] CNN 모델 추론 및 결과 출력
 # ============================================================
 import torch
 import cv2
@@ -207,7 +203,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torchvision import transforms
 
-# 1. ?�뜝�룞�삕沃섎챿�삕?? ?�뜝�룞�삕筌ｌ꼶�봺 �뜝占�? ?�뜝�룞�삕?�뜝�룞�삕 �뜝占�??�뜝�룞�삕
+# 1. 전처리된 얼굴 이미지를 RGB로 변환
 face_rgb = cv2.cvtColor(result.face_crop, cv2.COLOR_BGR2RGB)
 
 transform = transforms.Compose([
@@ -223,59 +219,56 @@ with torch.no_grad():
     # =========================================
     # OUTPUT OUTPUT OUTPUT OUTPUT OUTPUT OUTPUT
     predicted_age, predicted_gender, age_probs, gender_confidence = model(input_tensor)
-    # ?�뜝�룞�삕筌γ�볤돌?�뜝�룞�삕, ?�뜝�룞�삕筌β돦苑��뜝占�?, ?�뜝�룞�삕筌γ�볤돌?�뜝�룞�삕?�뜝�룞�삕�몴醫딇뀋?�뜝�룞�삕, ?�뜝�룞�삕癰귢쑵�넇?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕
+    # predicted_age, predicted_gender, age_probs, gender_confidence를 반환받습니다.
     # =========================================
 
 
-
-
 # ============================================================
-# ? ?�뜝�룞�삕揶쏄낱�넅 ?�뜝�룞�삕?�뜝�룞�삕 (?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕�뜝占�? �뜝占�??�뜝�룞�삕�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕)
+# 최종 예측 결과 출력
 # ============================================================
 
 gender_label = "Male" if int(predicted_gender.item()) == 0 else "Female"
 
 print("="*45)
-print("? [FaRL Model Final Analysis Results]")
+print("[FaRL Model Final Analysis Results]")
 print("="*45)
-print(f"?�뜝�룞�삕 Predicted Age: {predicted_age.item():.2f} years old")
-print(f"?�뜝�룞�삕 Predicted Gender: {gender_label} (Class Index: {int(predicted_gender.item())})")
-print(f"?�뜝�룞�삕 Gender Confidence: {gender_confidence.item() * 100:.2f}%")
+print(f"Predicted Age: {predicted_age.item():.2f} years old")
+print(f"Predicted Gender: {gender_label} (Class Index: {int(predicted_gender.item())})")
+print(f"Gender Confidence: {gender_confidence.item() * 100:.2f}%")
 print("="*45)
 
 
-# AFAD ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕 疫꿸낀�삕??�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕 (15?�뜝�룞�삕 ~ 40?�뜝�룞�삕)
+# AFAD 나이 클래스 범위 (15세 ~ 40세)
 ages_x = np.arange(15, 41)
 
-# ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕�뜝占�? �겫袁る７�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 獄쏄퀣肉닷뜝占�? �뜝占�??�뜝�룞�삕?�뜝�룞�삕�뜝占�? 100?�뜝�룞�삕 ��④퉲鍮� % ?�뜝�룞�삕?�뜝�룞�삕�뜝占�? �뜝占�?�뜝占�?
-# age_probs?�뜝�룞�삕 shape?�뜝�룞�삕 (1, 26)?�뜝�룞�삕�뜝占�?�뜝占�? [0]?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕 26揶쏆뮇彛ⓨ뜝占�? 1筌△뫁�뜚 獄쏄퀣肉�?�뜝�룞�삕 �뜝占�??�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕.
+# age_probs shape가 (1, 26)이라고 가정하고 확률을 퍼센트로 변환합니다.
 probs_percent = age_probs[0].cpu().numpy() * 100
 
 plt.figure(figsize=(10, 5))
 
-# ?�뜝�룞�삕 ?�뜝�룞�삕�뜝占�? �겫袁る７ 筌띾맮�삕??域밸챶�삋?�뜝�룞�삕 (?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕域밸챶�삪 ?�뜝�룞�삕?�뜝�룞�삕) ?�뜝�룞�삕?�뜝�룞�삕
+# 나이별 확률 분포 막대 그래프
 plt.bar(ages_x, probs_percent, color='royalblue', alpha=0.6, edgecolor='black', zorder=2, label='Age Probability Distribution')
 
-# ?�뜝�룞�삕 �겫袁る７ �빊遺욧쉭�뜝占�? ?�뜝�룞�삕 ?�뜝�룞�삕 癰귣떯由� ?�뜝�룞�삕?�뜝�룞�삕 �뜝占�??�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 �댆�뼲�삕???�뜝�룞�삕域밸챶�삋?�뜝�룞�삕 �빊酉귥삕??
+# 확률 분포 추세선
 plt.plot(ages_x, probs_percent, color='darkblue', marker='o', markersize=4, linestyle='-', linewidth=1.5, zorder=3)
 
-# ?�뜝�룞�삕 筌뤴뫀�쑞?�뜝�룞�삕 ?�뜝�룞�삕筌β돧釉� 筌ㅼ뮇伊� 疫꿸퀡�솊�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕燁살꼷肉� �뜮�몿而� ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕
+# 모델이 예측한 나이 위치를 세로선으로 표시
 plt.axvline(x=predicted_age.item(), color='crimson', linestyle='--', linewidth=2, zorder=4,
             label=f'Predicted Age: {predicted_age.item():.2f} yrs')
 
-# 域밸챶�삋?�뜝�룞�삕 ?�뜝�룞�삕????�뜝�룞�삕 ?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕 (?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕?�뜝�룞�삕 獄쏆꼷�겫)
+# 그래프 제목과 축 라벨 설정
 plt.title("FaRL Model: Age Prediction Probability Distribution", fontsize=13, fontweight='bold', pad=15)
 plt.xlabel("Age (Years)", fontsize=11, labelpad=10)
 plt.ylabel("Probability (%)", fontsize=11, labelpad=10)
 
-# X�뜝占�? ?�뜝�룞�삕疫뀀뜆�뱽 15?�뜝�룞�삕�뜝占�??�뜝�룞�삕 40?�뜝�룞�삕繹먮슪�삕?? 1?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕�뜝占�? �룯�꼷�굦?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕�뜝占�?
+# X축을 15세부터 40세까지 1세 단위로 표시
 plt.xticks(ages_x, fontsize=9)
 plt.xlim(14, 41)
-plt.ylim(0, max(probs_percent) * 1.2)  # 域밸챶�삋?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕 ?�뜝�룞�삕�뜝占�? ?�뜝�룞�삕�뜝占�?
+plt.ylim(0, max(probs_percent) * 1.2)  # 최대 확률보다 약간 크게 y축 범위 설정
 
 plt.grid(axis='y', linestyle='--', alpha=0.5, zorder=1)
 plt.legend(fontsize=10, loc='upper right')
 plt.tight_layout()
 
-# 雅뚯눛逾�?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕�뜝占�? / �굜遺얠삫 ?�뜝�룞�삕筌롫똻肉� 域밸챶�삋?�뜝�룞�삕 ?�뜝�룞�삕?�뜝�룞�삕�뜝占�?
+# 그래프 창 표시
 plt.show()
