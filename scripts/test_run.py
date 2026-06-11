@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cv2
 
 import random
-from camera_detector import CameraDetector
-from result_processor import process_predictions
+from face_age_gender_predictor.camera.camera_detector import CameraDetector
+from face_age_gender_predictor.processing.result_processor import process_predictions
 
 face_ready = False
 recording_requested = False

@@ -1,6 +1,6 @@
 
 import time
-from camera_detector import CameraDetector
+from face_age_gender_predictor.camera.camera_detector import CameraDetector
 
 detector = None
 

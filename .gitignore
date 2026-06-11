@@ -1,7 +1,18 @@
 image.jpg
 dontuse/
 __pycache__/
+assets/
 
 *.pt
 *.jpg
+*.png
 .venv
+
+# ignore model
+models/*.pt
+models/*.pth
+models/*.onnx
+
+# ignore meta data
+*.egg-info/
+src/*.egg-info/

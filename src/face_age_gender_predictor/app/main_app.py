@@ -5,7 +5,11 @@ from enum import Enum, auto  # 상태 Enum을 만들기 위해 사용
 
 from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, QCoreApplication, QTimer  # PyQt 핵심 클래스 import
 
-from workers import CameraBridgeWorker, InferenceWorker, ConsoleCommandWorker  # Worker 클래스들 import
+from face_age_gender_predictor.app.workers import (
+    CameraBridgeWorker,
+    InferenceWorker,
+    ConsoleCommandWorker,
+)  # Worker 클래스들 import
 
 
 class AppState(Enum):
