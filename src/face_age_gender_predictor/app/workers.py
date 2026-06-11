@@ -7,8 +7,11 @@ from typing import List, Optional  # 타입 힌트를 위해 사용
 import numpy as np  # OpenCV frame 타입 표시를 위해 사용
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot  # PyQt Signal/Slot과 Worker 객체를 위해 사용
 
-from camera_detector import CameraDetector  # 기존 카메라 감지기 클래스 가져오기
-from result_processor import process_predictions  # 기존 결과 후처리 함수 가져오기
+# 기존 카메라 감지기 클래스 가져오기
+from face_age_gender_predictor.camera.camera_detector import CameraDetector 
+# 기존 결과 후처리 함수 가져오기
+from face_age_gender_predictor.processing.result_processor import process_predictions
+
 
 
 class CameraBridgeWorker(QObject):

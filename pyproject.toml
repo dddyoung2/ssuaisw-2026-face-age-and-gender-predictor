@@ -1,0 +1,25 @@
+[project]
+name = "face-age-gender-predictor"
+version = "0.1.0"
+description = "Real-time face age and gender predictor built with Python, PyQt5, OpenCV, and PyTorch."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt5",
+    "opencv-python",
+    "numpy",
+    "torch",
+    "torchvision",
+    "mediapipe",
+    "matplotlib",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

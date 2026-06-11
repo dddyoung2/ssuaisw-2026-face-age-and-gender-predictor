@@ -1,29 +1,154 @@
-# 📷 Real-time Face Age & Gender Predictor
-> **PyQt5 GUI와 딥러닝(CNN) 기반의 실시간 얼굴 나이 및 성별 예측 시스템**
-> SSU AI소프트웨어학부 2026 1학기 고급AI수학 팀 프로젝트 (5인)
+﻿# Real-time Face Age & Gender Predictor
 
-## 1. 주요 기능 및 아키텍처 (Key Features)
-* 작성 중...
+> PyQt5 GUI와 딥러닝(CNN) 기반의 실시간 얼굴 나이 및 성별 예측 시스템  
+> SSU AI소프트웨어학부 2026년 1학기 고급AI수학 팀 프로젝트
 
-## 2. 기술 스택 (Tech Stack)
-```markdown
-### 🛠 Tech Stack
+## 프로젝트 개요
+
+이 프로젝트는 웹캠으로 얼굴을 감지하고, 캡처한 얼굴 프레임을 기반으로 나이와 성별을 예측하는 Python 기반 애플리케이션입니다.
+현재 저장소는 GUI 통합 전 단계로, 카메라 감지, 프레임 수집, 추론 작업 흐름, 결과 후처리 모듈을 역할별 패키지 구조로 정리하는 중입니다.
+
+## 주요 기능
+
+- OpenCV 기반 웹캠 얼굴 감지
+- 얼굴 감지 상태 안정화 후 측정 준비 상태 판단
+- 측정 요청 시 40프레임 캡처
+- PyQt5 QThread 기반 카메라/명령 입력/추론 작업 분리
+- 프레임별 예측 결과를 평균내는 후처리 구조
+- TorchScript `.pt` 모델을 이용한 나이 및 성별 예측 실험 코드
+
+## 기술 스택
+
 - **Language**: Python 3.10+
 - **GUI Framework**: PyQt5
-- **Computer Vision**: OpenCV-Python
-- **Deep Learning**:PyTorch
-- ****
+- **Computer Vision**: OpenCV-Python, MediaPipe
+- **Deep Learning**: PyTorch, TorchVision
+- **Test**: pytest
+
+## 프로젝트 구조
+
+```text
+ssuaisw-2026-face-age-and-gender-predictor/
+├─ .github/
+│  ├─ workflows/
+│  │  └─ tests.yml
+│  └─ pull_request_template.md
+├─ docs/
+│  ├─ overview.md
+│  ├─ architecture.md
+│  ├─ components.md
+│  └─ development.md
+├─ models/
+│  └─ Best_Age_Estimate_model_traced.pt
+├─ src/
+│  └─ face_age_gender_predictor/
+│     ├─ app/
+│     │  ├─ main_app.py
+│     │  └─ workers.py
+│     ├─ camera/
+│     │  └─ camera_detector.py
+│     ├─ inference/
+│     │  └─ CNNmodel.py
+│     └─ processing/
+│        └─ result_processor.py
+├─ tests/
+│  ├─ test_camera_detector.py
+│  └─ test_run.py
+├─ AGENTS.md
+├─ CLAUDE.md
+├─ pyproject.toml
+└─ README.md
 ```
-## 🚀 Getting Started
 
-**Repository Clone**
-   ```bash
-   git clone [https://github.com/유저명/ssuaisw-2026-face-age-and-gender-predictor.git](https://github.com/유저명/ssuaisw-2026-face-age-and-gender-predictor.git)
-   cd ssuaisw-2026-face-age-and-gender-predictor
+## 설치 방법
+
+저장소를 클론한 뒤 프로젝트 루트로 이동합니다.
+
+```bash
+git clone https://github.com/dddyoung2/ssuaisw-2026-face-age-and-gender-predictor.git
+cd ssuaisw-2026-face-age-and-gender-predictor
 ```
 
-### 🧠 AI Model Weights Download
-본 프로젝트를 실행하려면 학습된 모델 가중치 파일(`.pt`)이 필요합니다. 
-아래 링크를 클릭해 다운로드한 후, 프로젝트 루트 폴더에 넣어주세요.
+가상환경을 생성하고 활성화합니다.
 
-- [ssuaisw_face_model.pt 다운로드 (Direct Link)](https://github.com/dddyoung2/ssuaisw-2026-face-age-and-gender-predictor/releases/download/v1.0.0/Best_Age_Estimate_model_traced.pt)
+```bash
+python -m venv .venv
+```
+
+Windows CMD:
+
+```cmd
+.venv\Scripts\activate
+```
+
+PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+프로젝트와 개발용 의존성을 설치합니다.
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+## AI 모델 가중치
+
+본 프로젝트를 실행하려면 학습된 TorchScript 모델 가중치 파일(`.pt`)이 필요합니다.
+아래 링크에서 다운로드한 뒤 `models/` 폴더에 넣어주세요.
+
+- [Best_Age_Estimate_model_traced.pt 다운로드](https://github.com/dddyoung2/ssuaisw-2026-face-age-and-gender-predictor/releases/download/v1.0.0/Best_Age_Estimate_model_traced.pt)
+
+권장 위치:
+
+```text
+models/Best_Age_Estimate_model_traced.pt
+```
+
+모델 파일은 용량이 크기 때문에 Git에 커밋하지 않습니다.
+
+## 실행 방법
+
+현재 메인 앱은 GUI 통합 전 콘솔 기반 흐름 확인용입니다.
+
+```bash
+python -m face_age_gender_predictor.app.main_app
+```
+
+카메라를 사용하는 테스트 및 실행은 노트북/웹캠이 연결된 환경에서 확인합니다.
+
+## 테스트
+
+pytest 설정은 `pyproject.toml`에 정의되어 있습니다.
+
+```bash
+python -m pytest
+```
+
+현재 `tests/` 안의 파일은 카메라를 사용하는 수동 확인 성격이 강합니다.
+웹캠이 없는 환경에서는 카메라 관련 테스트가 실패하거나 대기할 수 있습니다.
+추후 자동 테스트는 카메라 의존성을 제거하거나 mock 기반 테스트로 분리할 예정입니다.
+
+## 문서
+
+상세 문서는 `docs/` 폴더에서 관리합니다.
+
+- `docs/overview.md`: 프로젝트 목적과 사용자 흐름
+- `docs/architecture.md`: 전체 구조와 데이터 흐름
+- `docs/components.md`: 주요 모듈별 역할
+- `docs/development.md`: 설치, 실행, 테스트, 개발 규칙
+
+## AI Agent 작업 지침
+
+AI agent가 프로젝트를 이해하고 일관된 방식으로 작업할 수 있도록 다음 파일을 둡니다.
+
+- `AGENTS.md`: 공통 agent 작업 규칙
+- `CLAUDE.md`: Claude 계열 agent 참고 규칙
+
+## 현재 상태
+
+- 프로젝트 구조를 `src/` 기반 Python 패키지 형태로 정리 중입니다.
+- GUI 통합 전 단계입니다.
+- 실제 카메라 테스트는 GitHub 업로드 후 노트북 환경에서 진행할 예정입니다.
+- 추론 워커는 현재 실제 모델 연동 전 임시 예측 흐름을 포함합니다.

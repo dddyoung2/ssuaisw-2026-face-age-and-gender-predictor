@@ -165,7 +165,7 @@ else:
 # =====================
 # .pt TorchScript 모델 파일 경로
 # =====================
-model_path = "./Best_Age_Estimate_model_traced.pt"
+model_path = "models/Best_Age_Estimate_model_traced.pt"
 
 print(f"TorchScript 모델을 [{device.type.upper()}] 장치로 불러오는 중...")
 model = torch.jit.load(model_path, map_location=device)
@@ -183,7 +183,7 @@ if 'preprocessor' not in globals():
 
 # ===================================
 # INPUT INPUT INPUT INPUT INPUT INPUT
-image_path = "./image.jpg" or "./image.png"
+image_path = "assets/sample_images/image.jpg"
 # ===================================
 raw_image_bgr = cv2.imread(image_path)
 
