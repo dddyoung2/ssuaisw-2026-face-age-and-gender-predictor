@@ -2,23 +2,25 @@
 
 import time  # 짧은 대기 시간을 주기 위해 사용
 import random  # 가짜 모델 예측값을 만들기 위해 사용
-from typing import List, Optional  # 타입 힌트를 위해 사용
+from typing import List, Optional, Tuple  # 타입 힌트를 위해 사용
 
 import numpy as np  # OpenCV frame 타입 표시를 위해 사용
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot  # PyQt Signal/Slot과 Worker 객체를 위해 사용
 
 # 기존 카메라 감지기 클래스 가져오기
-from face_age_gender_predictor.camera.camera_detector import CameraDetector 
+from face_age_gender_predictor.camera.camera_detector import CameraDetector
 # 기존 결과 후처리 함수 가져오기
 from face_age_gender_predictor.processing.result_processor import process_predictions
 
 
-
 class CameraBridgeWorker(QObject):
-    """CameraDetector를 PyQt Signal/Slot 구조로 감싸는 Worker"""
+    """CameraDetector를 PyQt Signal/Slot 구조로 감싸는 Worker (CameraThread에서 실행)"""
 
+    started = pyqtSignal()  # 카메라 감지가 실제로 시작되었음을 알리는 signal
     status_changed = pyqtSignal(str)  # 카메라 상태 메시지를 Sys로 보내는 signal
     face_ready_changed = pyqtSignal(bool)  # 얼굴 준비 여부를 Sys로 보내는 signal
+    preview_frame_ready = pyqtSignal(object)  # (frame, face_box) 미리보기 프레임 signal
+    capture_progress = pyqtSignal(int, int)  # 40프레임 캡처 진행률 signal
     frames_ready = pyqtSignal(object)  # 40프레임 캡처 결과를 Sys로 보내는 signal
     error_occurred = pyqtSignal(str)  # 카메라 오류 메시지를 Sys로 보내는 signal
     finished = pyqtSignal()  # Worker 종료를 알리는 signal
@@ -37,14 +39,20 @@ class CameraBridgeWorker(QObject):
                 on_single_person_detected=self._on_face_detected,  # 얼굴 감지 콜백 연결
                 on_no_single_person=self._on_face_not_detected,  # 얼굴 미감지 콜백 연결
                 on_frames_ready=self._on_frames_ready,  # 40프레임 완료 콜백 연결
+                on_preview_frame=self._on_preview_frame,  # 미리보기 프레임 콜백 연결
+                on_capture_progress=self._on_capture_progress,  # 캡처 진행률 콜백 연결
+                on_capture_aborted=self._on_capture_aborted,  # 캡처 직전 재검증 실패 콜백 연결
                 camera_index=self.camera_index,  # 사용할 카메라 번호 전달
             )
 
             self.detector.start()  # CameraDetector 내부 카메라 감지 시작
             self.status_changed.emit("[CameraWorker] 카메라 감지 실행 중")  # 시작 완료 메시지 emit
+            self.started.emit()  # 카메라가 실제로 시작되었음을 알림
 
         except Exception as e:  # 카메라 열기 실패 등 예외 처리
+            self.detector = None  # 시작 실패한 detector 참조 제거
             self.error_occurred.emit(str(e))  # 오류 메시지를 Sys로 전달
+            self.finished.emit()  # 실패 시 Thread/참조 정리를 위해 종료 signal emit
 
     @pyqtSlot()  # slot으로 호출될 수 있게 표시
     def start_capture(self):  # 40프레임 촬영 시작 함수
@@ -56,6 +64,7 @@ class CameraBridgeWorker(QObject):
             self.status_changed.emit("[CameraWorker] 이미 촬영 중입니다.")  # 중복 촬영 방지 메시지
             return  # 함수 종료
 
+        # 촬영 직전 얼굴 재검증은 CameraDetector.start_recording 내부에서도 수행한다.
         self.status_changed.emit("[CameraWorker] 40프레임 촬영 시작")  # 촬영 시작 메시지
         self.detector.start_recording()  # CameraDetector에 40프레임 촬영 요청
 
@@ -89,16 +98,30 @@ class CameraBridgeWorker(QObject):
     def _on_face_not_detected(self):  # CameraDetector의 얼굴 미감지 콜백
         self.face_ready_changed.emit(False)  # 얼굴 준비 해제 signal emit
 
+    def _on_preview_frame(self, frame: np.ndarray, face_box):  # 미리보기 프레임 콜백
+        self.preview_frame_ready.emit((frame, face_box))  # (frame, box) 튜플을 Sys로 전달
+
+    def _on_capture_progress(self, current: int, total: int):  # 캡처 진행률 콜백
+        self.capture_progress.emit(current, total)  # 진행률 signal emit
+
+    def _on_capture_aborted(self, reason: str):  # 촬영 직전 재검증 실패 콜백
+        self.error_occurred.emit(reason)  # 실패 사유를 오류로 전달
+
     def _on_frames_ready(self, frames: List[np.ndarray]):  # CameraDetector의 40프레임 완료 콜백
         self.status_changed.emit(f"[CameraWorker] {len(frames)}프레임 수신 완료")  # 프레임 수 메시지
         self.frames_ready.emit(frames)  # Sys로 frames 전달
 
 
 class InferenceWorker(QObject):
-    """40프레임을 받아 가짜 추론 후 result_processor까지 실행하는 Worker"""
+    """40프레임을 받아 추론 후 result_processor까지 실행하는 Worker (InferenceThread에서 실행)
+
+    주의: 실제 CNN 모델 호출은 CNN/Inference 담당 범위다. 현재 Worker는 QThread 연결과
+    result_processor 데이터 계약을 검증하기 위한 임시 prediction 흐름을 유지한다.
+    예외가 발생하면 error_occurred로 GUI에 전달되어 앱이 크래시하지 않는다.
+    """
 
     progress_changed = pyqtSignal(int, int)  # 추론 진행률 signal
-    result_ready = pyqtSignal(dict)  # 최종 결과 dict signal
+    result_ready = pyqtSignal(dict)  # 최종 result dict signal
     error_occurred = pyqtSignal(str)  # 오류 메시지 signal
     finished = pyqtSignal()  # Worker 종료 signal
 
@@ -118,11 +141,11 @@ class InferenceWorker(QObject):
             for index, frame in enumerate(self.frames, start=1):  # 각 frame을 하나씩 처리
                 _ = frame  # 현재는 frame을 실제 모델에 넣지 않고 사용 표시만 함
 
-                prediction = {  # result_processor가 요구하는 dict 형식의 가짜 예측값 생성
-                    "age": random.uniform(20, 40),  # 가짜 나이 예측값
-                    "gender": random.uniform(0, 1),  # 가짜 성별 원시값
-                    "age_probs": [1 / 26] * 26,  # 가짜 나이 확률분포
-                    "gender_confidence": random.uniform(0.7, 1.0),  # 가짜 성별 확신도
+                prediction = {  # result_processor가 요구하는 dict 형식의 임시 예측값 생성
+                    "age": random.uniform(20, 40),  # 임시 나이 예측값
+                    "gender": random.uniform(0, 1),  # 임시 성별 원시값
+                    "age_probs": [1 / 26] * 26,  # 임시 나이 확률분포
+                    "gender_confidence": random.uniform(0.7, 1.0),  # 임시 성별 확신도
                 }
 
                 predictions.append(prediction)  # prediction 리스트에 추가
@@ -130,7 +153,7 @@ class InferenceWorker(QObject):
                 time.sleep(0.01)  # 너무 빠르게 끝나지 않도록 짧은 대기
 
             process_predictions(  # 기존 result_processor 호출
-                predictions,  # 가짜 prediction 40개 전달
+                predictions,  # prediction 리스트 전달
                 on_result_ready=self._on_result_ready,  # 결과 콜백 연결
             )
 
@@ -145,7 +168,7 @@ class InferenceWorker(QObject):
 
 
 class ConsoleCommandWorker(QObject):
-    """콘솔 입력을 받는 Worker"""
+    """콘솔 입력을 받는 보조 Worker (GUI 기본 흐름에서는 사용하지 않음, 디버그용)"""
 
     command_entered = pyqtSignal(str)  # 사용자가 입력한 명령어를 보내는 signal
     finished = pyqtSignal()  # 콘솔 Worker 종료 signal
