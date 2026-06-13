@@ -1,183 +1,126 @@
 # Components
 
-## `src/face_age_gender_predictor/app/main_window.py`
-
-PyQt5 GUI 화면 계층(View) 파일이다. 현재 중심 클래스는 `AgeEstimatorWindow`이며, 정식 실행은 `main_app.py`가 `SystemController`와 연결해서 수행한다.
-
-현재 GUI 책임:
-
-- 카메라 미리보기 표시
-- 중앙 guide box와 얼굴 감지 bbox 표시
-- 현재 상태와 얼굴 감지 상태 표시
-- 카메라 시작, 측정 시작, 카메라 종료 버튼 제공
-- 카운트다운 표시
-- 40프레임 캡처 진행률 표시
-- 측정된 얼굴 preview 표시
-- 나이, 성별, 나이 확신도, 성별 확신도 표시
-- 15~40세 나이 히스토그램 표시
-- 카메라 오류와 얼굴 미감지 안내 메시지 표시
-- 버튼/종료 이벤트를 signal로 `SystemController`에 전달
-- `SystemController`가 보내는 상태/프레임/진행률/결과/오류 signal을 화면에 표시
-
-현재 포함된 UI 보조 컴포넌트:
-
-- `AspectRatioLabel`: 카메라 프레임을 비율 유지 상태로 표시하는 QLabel
-- `MetricCard`: 상태와 얼굴 감지 여부를 카드 형태로 표시
-- `AgeHistogramWidget`: 나이 분포 막대 그래프를 직접 paint하는 QWidget
-- `AppState`: `IDLE`, `READY`, `COUNTDOWN`, `COLLECTING`, `ANALYZING`, `DONE`, `ERROR`
-- `StateMeta`: 상태별 라벨, 배너, 안내 문구, 색상 정의
-
-현재 구현상 주의:
-
-- `AgeEstimatorWindow`는 `cv2.VideoCapture`를 직접 소유하지 않는다.
-- GUI는 카메라 읽기, 얼굴 감지, 40프레임 캡처, 모델 추론을 직접 수행하지 않는다.
-- GUI 위젯 갱신은 MainThread에서만 수행한다.
-- 단독 실행(`python -m face_age_gender_predictor.app.main_window`)은 가능하지만, 이 경우 `SystemController`가 없으므로 카메라/추론 없이 안내용 창만 뜬다.
-
-통합 기준:
-
-- `AgeEstimatorWindow`는 화면 표시와 사용자 입력만 담당한다.
-- 카메라 읽기와 40프레임 캡처는 `CameraBridgeWorker`/`CameraDetector` 경로에서 수행한다.
-- 추론 WorkerThread는 `CNNmodel.predict_frames()`를 호출해 `models/Best_Age_Estimate_model_traced.pt` 기반 prediction을 생성하고 `result_processor`로 전달한다.
-- GUI와 `SystemController`는 `connect_window_and_controller`에서 signal/slot으로 연결한다.
-
-권장 import:
-
-```python
-from face_age_gender_predictor.app.main_window import AgeEstimatorWindow
-```
-
-나중에 이름을 더 일반화하려면 `AgeEstimatorWindow`를 `MainWindow`로 alias하거나 클래스명을 바꿀 수 있다. 단, 현재 업로드된 코드의 실제 클래스명은 `AgeEstimatorWindow`다.
-
 ## `src/face_age_gender_predictor/app/main_app.py`
 
-GUI 앱의 실행 진입점과 시스템 상태 제어를 담당한다.
+공식 GUI 앱 진입점이다. `QApplication`, `AgeEstimatorWindow`, `SystemController`를 생성하고 `connect_window_and_controller`로 signal/slot을 연결한다.
 
-현재 `main_app.py`는 `QApplication`, `SystemController`, `AgeEstimatorWindow`를 생성하고 `connect_window_and_controller`로 GUI와 controller를 연결하는 정식 GUI 진입점이다.
+주요 책임:
 
-### `AppState`
+- 앱 실행과 종료
+- GUI View와 Controller 연결
+- 카메라 시작, 측정 요청, 카메라 종료 요청 연결
+- Controller 상태, 프레임, 진행률, 결과, 오류를 GUI 표시 slot에 연결
 
-프로그램 상태를 나타낸다.
+## `SystemController`
 
-```text
-IDLE
-COUNTDOWN
-CAPTURING
-ANALYZING
-DONE
-ERROR
-```
+앱 상태 전이를 관리하는 중재자다. 화면을 직접 그리지 않고, 무거운 작업도 직접 수행하지 않는다.
 
-### `SystemController`
+주요 책임:
 
-전체 흐름의 중재자다.
-
-책임:
-
-- GUI 요청 수신
-- 얼굴 준비 상태 관리
+- 카메라 WorkerThread 생성과 정리
+- 얼굴 준비 상태 추적
 - 측정 요청 검증
 - 카운트다운 시작과 종료 처리
-- 촬영 요청 signal 발행
-- frames 수신 후 InferenceWorker 실행
-- 추론 결과를 GUI에 전달
-- 오류 상태와 복구 흐름 관리
-- 종료 시 카메라와 스레드 정리
+- 캡처 요청 전달
+- 추론 WorkerThread 생성과 결과 수신
+- 성공/실패/오류 상태를 GUI에 signal로 전달
+- 정상 측정 완료 후 재인식 시 측정 버튼 재활성화
 
-SystemController는 화면을 직접 그리지 않고, 무거운 작업도 직접 수행하지 않는다. GUI 통합 후에는 `AgeEstimatorWindow`의 버튼 이벤트와 SystemController의 measurement/camera 요청 signal을 연결하는 중재 계층이 필요하다.
+## `src/face_age_gender_predictor/app/main_window.py`
+
+PyQt5 GUI View 파일이다. 중심 클래스는 `AgeEstimatorWindow`다.
+
+주요 책임:
+
+- 카메라 미리보기 표시
+- 얼굴 bbox와 중앙 guide box 표시
+- 상태, 버튼, 카운트다운, 진행률 표시
+- 측정 전/중/후 UI 상태 전환
+- 얼굴 미리보기 스냅샷, 나이, 성별, 신뢰도, 나이 분포 표시
+- 사용자 입력을 signal로 Controller에 전달
+
+주의:
+
+- 공식 앱 흐름에서 카메라 읽기와 모델 추론은 View가 직접 수행하지 않는다.
+- GUI 위젯 갱신은 MainThread에서만 수행한다.
+- `main_window.py` 단독 실행은 화면 확인 목적이며 전체 시스템 흐름은 `main_app.py`를 사용한다.
 
 ## `src/face_age_gender_predictor/app/workers.py`
 
-PyQt Worker 객체들을 정의한다.
+PyQt Worker 객체를 정의한다.
 
 ### `CameraBridgeWorker`
 
-`CameraDetector`를 PyQt signal/slot 구조로 감싼다.
+`CameraDetector`를 QThread 환경에서 실행하고, callback 기반 이벤트를 PyQt signal로 변환한다.
 
 주요 signal:
 
-- `started()`
-- `status_changed(str)`
-- `face_ready_changed(bool)`
-- `preview_frame_ready(object)`
-- `capture_progress(int, int)`
-- `frames_ready(object)`
-- `error_occurred(str)`
-- `finished()`
+```text
+started()
+status_changed(str)
+face_ready_changed(bool)
+preview_frame_ready(object)
+capture_progress(int, int)
+frames_ready(object)
+error_occurred(str)
+finished()
+```
 
 주요 slot:
 
-- `start_camera()`
-- `start_capture()`
-- `resume_detection()`
-- `stop_camera()`
-
-GUI 통합 시 CameraBridgeWorker는 CameraThread에서 실행되어야 한다.
+```text
+start_camera()
+start_capture()
+resume_detection()
+stop_camera()
+```
 
 ### `InferenceWorker`
 
-40프레임을 받아 추론 WorkerThread에서 prediction 생성과 후처리 흐름을 수행한다.
+캡처된 프레임을 받아 추론과 후처리를 수행한다.
 
-현재 책임:
+주요 책임:
 
-- 전달받은 frame 리스트 검증
+- frame list 검증
 - `CNNmodel.predict_frames(frames)` 호출
-- prediction dict 리스트 생성
-- `result_processor.process_predictions` 호출
+- `result_processor.process_predictions(predictions)` 호출
 - 진행률, 결과, 오류 signal 전달
 
-이번 병합 범위에서는 fake prediction 흐름을 제거하고 실제 앱용 모델 추론 API로 교체한다.
-모델 파일 없음, 모델 로드 실패, 전처리 실패, 추론 실패는 `error_occurred` 또는 실패 result로 전달한다.
-
-### `ConsoleCommandWorker`
-
-개발 초기 단계의 보조 입력 Worker다. 최종 GUI 앱의 기본 흐름에서는 사용하지 않는다. 필요하다면 개발자 디버그 옵션으로만 남긴다.
+추론은 `InferenceThread`에서 수행되며 GUI MainThread를 막지 않아야 한다.
 
 ## `src/face_age_gender_predictor/camera/camera_detector.py`
 
-카메라 장치와 얼굴 감지, 40프레임 캡처를 담당한다.
+카메라 장치와 얼굴 감지, 캡처를 담당한다.
 
-책임:
+주요 책임:
 
 - `cv2.VideoCapture` 소유
 - 프레임 읽기
-- 얼굴 감지
-- 최신 프레임과 얼굴 bbox 저장
-- 얼굴 준비 상태 안정화
-- 캡처 요청 시 40프레임 수집
-- 캡처 완료 callback 호출
-
-GUI 통합 시 중요한 보강점:
-
-- 카운트다운 종료 또는 촬영 시작 직전에 최신 얼굴 상태를 재검증한다.
-- 얼굴이 사라졌거나 bbox가 유효하지 않으면 캡처를 시작하지 않는다.
-- 종료 시 카메라 자원과 OpenCV 창 자원을 정리한다.
+- 얼굴 감지와 bbox 관리
+- 얼굴 준비 상태 판단
+- 40프레임 캡처
+- 캡처 진행률과 완료 callback 호출
+- 종료 시 카메라 자원 정리
 
 ## `src/face_age_gender_predictor/inference/CNNmodel.py`
 
-얼굴 전처리와 TorchScript 모델 추론을 담당할 모듈이다.
+얼굴 전처리와 TorchScript 모델 추론을 담당하는 앱용 API 모듈이다.
 
-현재 포함된 요소:
+현재 기준:
 
-- MediaPipe 0.10.21 기반 얼굴 검출과 정렬
-- `FacePreprocessor`
-- `AFADPreprocessor`
-- TorchScript 모델 로드 실험 코드
-- 단일 이미지 추론과 그래프 시각화 예제
+- import 시 모델 로드, 샘플 추론, plot 실행을 하지 않는다.
+- 기본 모델 경로는 `models/Best_Age_Estimate_model_traced.pt`이다.
+- 모델은 필요할 때 lazy load한다.
+- 같은 프로세스 안에서는 캐시된 모델을 재사용한다.
+- `predict_frames()`는 프레임 list를 받아 prediction dict list를 반환한다.
 
-GUI 앱 연결 전에 필요한 정리:
-
-- import 시 모델 로드와 샘플 추론이 자동 실행되지 않게 한다.
-- 앱용 API를 제공한다.
-
-권장 API:
+권장 호출:
 
 ```python
-def predict_frames(frames: list) -> list[dict]:
-    ...
+from face_age_gender_predictor.inference.CNNmodel import predict_frames
 ```
 
-반환 prediction dict:
+prediction dict:
 
 ```python
 {
@@ -190,24 +133,18 @@ def predict_frames(frames: list) -> list[dict]:
 
 ## `src/face_age_gender_predictor/processing/result_processor.py`
 
-프레임별 prediction 리스트를 최종 결과로 집계한다.
+프레임별 prediction list를 최종 result dict로 집계한다.
 
-현재 책임:
-
-- 평균 나이 계산
-- 평균 gender 원시값 기준 최종 성별 결정
-- `age_probs` 원소별 평균 계산
-- `gender_confidence` 평균 계산
-
-목표 책임:
+주요 책임:
 
 - 유효 prediction 필터링
-- `valid_count` 계산
-- `valid_count >= 30`이면 성공
-- `valid_count < 30`이면 실패
-- GUI가 표시하기 쉬운 result dict 반환
+- 평균 나이 계산
+- 평균 gender score 기반 최종 성별 결정
+- `age_probs` 평균 계산
+- `gender_confidence` 평균 계산
+- `valid_count`와 실패 reason 제공
 
-권장 최종 result:
+최종 result:
 
 ```python
 {
@@ -223,18 +160,26 @@ def predict_frames(frames: list) -> list[dict]:
 
 ## `scripts/`
 
-개발자 보조 스크립트 위치다.
+개발 보조 스크립트 위치다. 제품 흐름의 기준은 아니다.
 
 용도:
 
 - 카메라 단독 확인
 - OpenCV 미리보기 확인
-- GUI와 무관한 빠른 디버깅
-
-스크립트 동작이 GUI 앱의 기준이 되면 안 된다.
+- 로컬 디버깅
 
 ## `tests/`
 
 자동 테스트 위치다.
 
-현재는 `result_processor` 테스트가 중심이며, GUI 통합 후에는 Worker와 상태 전이 테스트를 보강해야 한다.
+현재 테스트 범위:
+
+- `test_result_processor.py`
+- `test_camera_detector.py`
+- `test_cnnmodel.py`
+- `test_controller.py`
+- `test_main_window.py`
+- `test_window_preview.py`
+- `test_workers.py`
+
+테스트는 모델 파일이 없어도 import 안전성과 오류 경로를 검증할 수 있어야 한다. 실제 모델 파일과 웹캠이 필요한 end-to-end 흐름은 수동 QA로 분리한다.
