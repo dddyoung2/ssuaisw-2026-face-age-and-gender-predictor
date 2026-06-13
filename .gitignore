@@ -1,18 +1,34 @@
-image.jpg
-dontuse/
-__pycache__/
-assets/
-
+# Files
+.env
+.env.*
+*.pyc
+*.pyo
+*.pyd
 *.pt
+*.pth
+*.onnx
 *.jpg
+*.jpeg
 *.png
-.venv
+image.jpg
 
-# ignore model
+# Folders
+.venv/
+__pycache__/
+.pytest_cache/
+assets/
+dontuse/
+.claude/
+
+# Python package metadata
+*.egg-info/
+src/*.egg-info/
+
+# Model artifacts
 models/*.pt
 models/*.pth
 models/*.onnx
 
-# ignore meta data
-*.egg-info/
-src/*.egg-info/
+# AI agent local reports
+# IMPLEMENTATION.md / REVIEW.md 는 Acceptance가 요구하는 완료 산출물이므로 커밋 대상으로 유지한다.
+AI-Agents/archive/
