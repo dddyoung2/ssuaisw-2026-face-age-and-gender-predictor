@@ -1,19 +1,19 @@
 # PR
 
-## PR Title Suggestion
+## PR 제목 제안
 
-feat(app): integrate PyQt GUI with threaded camera flow
+feat(app): PyQt GUI와 QThread 카메라 흐름 통합
 
-## Summary
+## 변경 요약
 
-- Connect `AgeEstimatorWindow` to `SystemController` as the main PyQt5 GUI entrypoint.
-- Route camera start/stop, countdown, 40-frame capture, inference worker execution, result handling, and error recovery through controller/worker signals.
-- Move GUI responsibilities toward display/input only, while camera capture and inference run through worker paths.
-- Update result aggregation to return `success`, `valid_count`, and `reason` so GUI failure states are displayable.
-- Add tests for result processing, camera detector behavior, and worker error/result paths.
-- Document current architecture, development flow, agent/release ownership, and remaining manual QA/model follow-up.
+- `AgeEstimatorWindow`를 `SystemController`와 연결해 PyQt5 GUI를 기본 실행 진입점으로 구성했습니다.
+- 카메라 시작/종료, 카운트다운, 40프레임 캡처, 추론 Worker 실행, 결과 표시, 오류 복구를 controller/worker signal 흐름으로 정리했습니다.
+- GUI는 화면 표시와 버튼 입력을 담당하고, 카메라 캡처와 추론 흐름은 Worker 경로에서 실행되도록 책임을 분리했습니다.
+- `result_processor`가 `success`, `valid_count`, `reason`을 포함한 결과 dict를 반환하도록 갱신해 GUI에서 실패 상태를 표시할 수 있게 했습니다.
+- result processor, camera detector, worker 오류/결과 경로 테스트를 추가했습니다.
+- README, 개발/아키텍처 문서, AI agent 작업 문서를 현재 릴리즈 경계에 맞게 정리했습니다.
 
-## Major Changed Files
+## 주요 변경 파일
 
 - `src/face_age_gender_predictor/app/main_app.py`
 - `src/face_age_gender_predictor/app/main_window.py`
@@ -36,7 +36,7 @@ feat(app): integrate PyQt GUI with threaded camera flow
 - `docs/SPEC.md`
 - `docs/team-tasks.md`
 
-## Test Results
+## 테스트 결과
 
 ```text
 명령: .\.venv\Scripts\python.exe -m pytest -q
@@ -51,20 +51,20 @@ feat(app): integrate PyQt GUI with threaded camera flow
 결과: PASS
 ```
 
-## Security / Privacy Check
+## 보안/개인정보 확인
 
-- [x] `.env`, `.env.*`, secret files, tokens, and private keys are not present in the changed/untracked file list.
-- [x] Model files such as `*.pt`, `*.pth`, and `*.onnx` are not present in the changed/untracked file list.
-- [x] Private image files are not present in the changed/untracked file list.
-- [x] Build/cache artifacts such as `.pytest_cache`, `__pycache__`, `dist`, `build`, and egg-info output are not present in the non-ignored changed/untracked file list.
-- [x] Current branch is `feature/gui-qthread-integration`, not `main`.
+- [x] `.env`, `.env.*`, secret 파일, token, private key가 변경/추가 파일 목록에 없습니다.
+- [x] `*.pt`, `*.pth`, `*.onnx` 같은 모델 파일이 변경/추가 파일 목록에 없습니다.
+- [x] 개인 이미지 파일이 변경/추가 파일 목록에 없습니다.
+- [x] `.pytest_cache`, `__pycache__`, `dist`, `build`, egg-info 같은 빌드/캐시 산출물이 non-ignored 변경 목록에 없습니다.
+- [x] 현재 브랜치는 `feature/gui-qthread-integration`이며 `main` 브랜치 직접 push가 아닙니다.
 
-## BLOCKED or Follow-up
+## 남은 확인 / 후속 작업
 
-- Not blocked for PR: `AI-Agents/REVIEW.md` Verdict is `PASS`.
-- Not verified in this environment: real desktop GUI launch, webcam preview, no-face behavior, face disappearing during countdown, 40-frame real capture stability, and actual camera/QThread cleanup on window close.
-- Follow-up task: connect actual TorchScript model inference and naturally verify model-file-missing / TorchScript failure paths. Current worker/result/error contracts are prepared, but actual model connection is intentionally left for a separate task.
-- Follow-up check: after the user pulls this branch, run manual QA on a desktop with a webcam and record the result.
+- PR 진행 자체를 막는 blocker는 없습니다. `AI-Agents/REVIEW.md` Verdict는 `PASS`입니다.
+- 현재 환경에서는 실제 데스크톱 GUI 실행, 웹캠 미리보기, 얼굴 없음 상태, 카운트다운 중 얼굴 이탈, 실제 40프레임 캡처 안정성, 창 종료 시 카메라/QThread 정리를 검증하지 못했습니다.
+- 실제 TorchScript 모델 연결과 모델 파일 없음/추론 실패 자연 발생 검증은 별도 task로 이관했습니다.
+- 사용자가 노트북에서 이 브랜치를 pull 받은 뒤 실제 웹캠 환경에서 수동 QA를 진행하고 결과를 기록해야 합니다.
 
 ## Suggested PR Body
 
