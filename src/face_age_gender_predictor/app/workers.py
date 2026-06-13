@@ -1,7 +1,5 @@
 # workers.py
 
-import time  # 짧은 대기 시간을 주기 위해 사용
-import random  # 가짜 모델 예측값을 만들기 위해 사용
 from typing import List, Optional, Tuple  # 타입 힌트를 위해 사용
 
 import numpy as np  # OpenCV frame 타입 표시를 위해 사용
@@ -9,6 +7,8 @@ from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot  # PyQt Signal/Slot과 Wo
 
 # 기존 카메라 감지기 클래스 가져오기
 from face_age_gender_predictor.camera.camera_detector import CameraDetector
+# 실제 TorchScript 모델 추론 API 가져오기
+from face_age_gender_predictor.inference.CNNmodel import predict_frames
 # 기존 결과 후처리 함수 가져오기
 from face_age_gender_predictor.processing.result_processor import process_predictions
 
@@ -113,11 +113,13 @@ class CameraBridgeWorker(QObject):
 
 
 class InferenceWorker(QObject):
-    """40프레임을 받아 추론 후 result_processor까지 실행하는 Worker (InferenceThread에서 실행)
+    """40프레임을 받아 실제 TorchScript 모델 추론 후 result_processor까지 실행하는
+    Worker (InferenceThread에서 실행)
 
-    주의: 실제 CNN 모델 호출은 CNN/Inference 담당 범위다. 현재 Worker는 QThread 연결과
-    result_processor 데이터 계약을 검증하기 위한 임시 prediction 흐름을 유지한다.
-    예외가 발생하면 error_occurred로 GUI에 전달되어 앱이 크래시하지 않는다.
+    추론은 CNNmodel.predict_frames(frames)를 통해 수행한다. 모델 로드/전처리/추론은
+    모두 이 Worker가 실행되는 InferenceThread에서 일어나며 GUI MainThread를 막지 않는다.
+    모델 파일 없음/로드 실패/추론 실패 같은 전역 오류는 error_occurred로 GUI에 전달되어
+    앱이 크래시하지 않는다(임의의 임시 예측값으로 대체하지 않는다).
     """
 
     progress_changed = pyqtSignal(int, int)  # 추론 진행률 signal
@@ -135,25 +137,17 @@ class InferenceWorker(QObject):
             if not self.frames:  # frames가 비어 있으면
                 raise ValueError("추론할 프레임이 없습니다.")  # 명시적 오류 발생
 
-            predictions = []  # 모델 예측 결과를 담을 리스트 생성
             total = len(self.frames)  # 전체 프레임 수 저장
 
-            for index, frame in enumerate(self.frames, start=1):  # 각 frame을 하나씩 처리
-                _ = frame  # 현재는 frame을 실제 모델에 넣지 않고 사용 표시만 함
+            # 실제 모델 추론(InferenceThread에서 실행). 전처리 실패 프레임은 내부에서
+            # 건너뛰고, 모델 파일 없음 등 전역 오류는 예외로 전파된다.
+            predictions = predict_frames(
+                self.frames,
+                progress_callback=lambda current: self.progress_changed.emit(current, total),
+            )
 
-                prediction = {  # result_processor가 요구하는 dict 형식의 임시 예측값 생성
-                    "age": random.uniform(20, 40),  # 임시 나이 예측값
-                    "gender": random.uniform(0, 1),  # 임시 성별 원시값
-                    "age_probs": [1 / 26] * 26,  # 임시 나이 확률분포
-                    "gender_confidence": random.uniform(0.7, 1.0),  # 임시 성별 확신도
-                }
-
-                predictions.append(prediction)  # prediction 리스트에 추가
-                self.progress_changed.emit(index, total)  # 진행률 signal emit
-                time.sleep(0.01)  # 너무 빠르게 끝나지 않도록 짧은 대기
-
-            process_predictions(  # 기존 result_processor 호출
-                predictions,  # prediction 리스트 전달
+            process_predictions(  # 유효 prediction 수로 성공/실패를 판단하는 후처리
+                predictions,  # 모델 prediction 리스트 전달
                 on_result_ready=self._on_result_ready,  # 결과 콜백 연결
             )
 

@@ -255,6 +255,11 @@ class AgeEstimatorWindow(QMainWindow):
 
         self.latest_frame: Optional[np.ndarray] = None
         self.latest_face_box: Optional[FaceBox] = None
+        # 이번 측정에서 캡처한 얼굴 스냅샷(결과 미리보기용).
+        # latest_frame은 촬영 종료 직후 재개되는 감지 루프가 덮어쓰므로,
+        # 카운트다운 동안 얼굴이 있는 프레임을 따로 고정해 결과 표시 시점에 사용한다.
+        self.captured_frame: Optional[np.ndarray] = None
+        self.captured_face_box: Optional[FaceBox] = None
         self.age_histogram_values = [0] * 26
 
         self.build_ui()
@@ -704,10 +709,12 @@ class AgeEstimatorWindow(QMainWindow):
         if mapped == AppState.IDLE and self.camera_running and self.face_ready:
             mapped = AppState.READY
 
-        # 새 측정 시작(카운트다운) 시 이전 결과를 정리한다.
+        # 새 측정 시작(카운트다운) 시 이전 결과와 이전 캡처 스냅샷을 정리한다.
         if mapped == AppState.COUNTDOWN:
             self.reset_progress_bar()
             self.clear_preview_panel()
+            self.captured_frame = None
+            self.captured_face_box = None
 
         self.enter_state(mapped)
         self.sync_button_states()
@@ -775,6 +782,14 @@ class AgeEstimatorWindow(QMainWindow):
 
         self.latest_frame = frame
         self.latest_face_box = face_box
+
+        # 측정이 시작된 뒤(카운트다운/캡처) 얼굴이 있는 마지막 프레임을 결과 미리보기용으로
+        # 고정한다. 캡처 종료 후 재개되는 감지 루프가 latest_frame을 덮어써도, 이 스냅샷은
+        # 이번 측정에서 캡처한 얼굴을 그대로 유지한다.
+        if face_box is not None and self.state in {AppState.COUNTDOWN, AppState.COLLECTING}:
+            self.captured_frame = frame
+            self.captured_face_box = face_box
+
         self.render_preview(frame, face_box)
 
     @pyqtSlot(dict)
@@ -798,9 +813,35 @@ class AgeEstimatorWindow(QMainWindow):
     # 결과 표시
     # ====================================================================
 
+    @classmethod
+    def _compute_age_confidence(cls, age_probs, predicted_age) -> float:
+        """예측 나이 ±2세 윈도우의 확률 질량(%)을 반환한다.
+
+        모델의 26-클래스(15~40세) 확률분포에서, 예측 나이를 중심으로 ±2세 범위에 속하는
+        클래스 확률을 합산한다. 유효 클래스 범위(AGE_MIN~AGE_MAX) 밖의 나이는 제외하고,
+        표시값은 0~100%로 clamp한다.
+        """
+        if not age_probs or predicted_age is None:
+            return 0.0
+
+        center = int(round(predicted_age))
+        total = 0.0
+        for age in range(center - 2, center + 3):  # center-2 .. center+2 (5개)
+            if cls.AGE_MIN <= age <= cls.AGE_MAX:
+                index = age - cls.AGE_MIN
+                if 0 <= index < len(age_probs):
+                    total += age_probs[index]
+
+        return min(100.0, max(0.0, total * 100.0))
+
     def _show_success_result(self, result: dict) -> None:
-        # 측정 직전 프레임에서 얼굴 미리보기를 만든다.
-        preview_face = self._make_preview_face(self.latest_frame, self.latest_face_box)
+        # 이번 측정에서 고정한 캡처 스냅샷으로 얼굴 미리보기를 만든다.
+        # (스냅샷이 없으면 live 프레임으로 폴백)
+        frame = self.captured_frame if self.captured_frame is not None else self.latest_frame
+        face_box = (
+            self.captured_face_box if self.captured_face_box is not None else self.latest_face_box
+        )
+        preview_face = self._make_preview_face(frame, face_box)
         if preview_face is not None:
             self.set_preview_face(preview_face)
 
@@ -814,8 +855,9 @@ class AgeEstimatorWindow(QMainWindow):
         self.set_age_result(f"{age:.0f}세" if age is not None else "-")
         self.set_gender_confidence(f"{gender_confidence * 100:.1f}%")
 
-        # 나이 확신도: 확률분포의 최댓값을 표시 지표로 사용
-        age_confidence = max(age_probs) * 100 if age_probs else 0.0
+        # 나이 확신도: 예측 나이 ±2세 윈도우의 확률 질량을 사용자 지표로 사용
+        # (단일 클래스 최댓값은 값이 너무 낮아 "나이 확신도" 라벨과 맞지 않음)
+        age_confidence = self._compute_age_confidence(age_probs, age)
         self.set_age_confidence(f"{age_confidence:.1f}%")
 
         # 히스토그램: age_probs(26개)를 정수 스케일로 표시 (위젯이 최대값 기준 정규화)
@@ -848,7 +890,7 @@ class AgeEstimatorWindow(QMainWindow):
         if frame is None or face_box is None:
             return None
 
-        x, y, w, h = face_box
+        x, y, w, h = self._expanded_square_face_box(frame.shape, face_box)
         face_crop = frame[y:y + h, x:x + w]
         if face_crop.size == 0:
             return None
@@ -858,6 +900,37 @@ class AgeEstimatorWindow(QMainWindow):
         if resized.ndim != 3 or resized.shape[2] != 3:
             return None
         return resized
+
+    @staticmethod
+    def _expanded_square_face_box(frame_shape, face_box: FaceBox, margin: float = 0.45) -> FaceBox:
+        height, width = frame_shape[:2]
+        x, y, w, h = face_box
+        side = int(max(w, h) * (1.0 + margin * 2.0))
+        side = max(1, side)
+
+        cx = x + w // 2
+        cy = y + h // 2
+        x1 = cx - side // 2
+        y1 = cy - side // 2
+        x2 = x1 + side
+        y2 = y1 + side
+
+        if x1 < 0:
+            x2 -= x1
+            x1 = 0
+        if y1 < 0:
+            y2 -= y1
+            y1 = 0
+        if x2 > width:
+            shift = x2 - width
+            x1 = max(0, x1 - shift)
+            x2 = width
+        if y2 > height:
+            shift = y2 - height
+            y1 = max(0, y1 - shift)
+            y2 = height
+
+        return int(x1), int(y1), int(x2 - x1), int(y2 - y1)
 
     # ====================================================================
     # 미리보기 렌더링 (전달받은 프레임에 overlay만 그린다)

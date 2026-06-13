@@ -74,12 +74,15 @@ class CameraDetector:
         self._latest_frame = None
         self._latest_faces = []
         self._latest_face_box: Optional[FaceBox] = None
+        self._last_face_seen_at = 0.0
 
         # 얼굴 준비 상태 안정화용 변수
         self._last_face_ready = None
         self._candidate_ready = None
         self._stable_count = 0
-        self._stable_threshold = 5
+        self._ready_on_threshold = 3
+        self._ready_off_threshold = 10
+        self._face_grace_seconds = 1.2
 
     # 공개 메서드
 
@@ -101,6 +104,7 @@ class CameraDetector:
         self._latest_frame = None
         self._latest_faces = []
         self._latest_face_box = None
+        self._last_face_seen_at = 0.0
         print("[카메라] 종료")
 
     def start_recording(self):
@@ -108,8 +112,12 @@ class CameraDetector:
         if self._recording:
             return
 
-        # 촬영 시작 직전 얼굴 상태 재검증
-        if not self.has_recent_face():
+        # 촬영 시작 직전 얼굴 상태 재검증.
+        # grace period(has_recent_face)는 버튼/감지 상태 안정화용이라 얼굴이 방금
+        # 사라져도 잠시 True를 유지한다. 하지만 실제 40프레임 캡처는 "지금 유효한
+        # 얼굴 bbox"가 있을 때만 시작해야 하므로(has_current_face), grace가 아니라
+        # 현재 프레임의 _latest_face_box 존재 여부로 진행/취소를 결정한다.
+        if not self.has_current_face():
             print("[카메라] 촬영 직전 얼굴 미감지 → 촬영 취소")
             if self.on_capture_aborted:
                 self.on_capture_aborted("얼굴이 사라져 촬영을 시작할 수 없습니다.")
@@ -123,9 +131,24 @@ class CameraDetector:
     def is_recording(self) -> bool:
         return self._recording
 
-    def has_recent_face(self) -> bool:
-        """가장 최근 감지 결과에 얼굴이 있는지 반환한다 (촬영 직전 재검증용)."""
+    def has_current_face(self) -> bool:
+        """현재 프레임에 유효한 얼굴 bbox가 있는지 반환한다 (촬영 직전 엄격 재검증용).
+
+        grace period를 적용하지 않으므로, 얼굴이 방금 사라진 상태에서는 False를 반환한다.
+        """
         return self._latest_face_box is not None
+
+    def has_recent_face(self) -> bool:
+        """가장 최근 감지 결과에 얼굴이 있는지 반환한다 (감지/버튼 상태 안정화용).
+
+        grace period(_face_grace_seconds) 동안은 얼굴이 잠시 사라져도 True를 유지해
+        준비 상태 깜빡임을 줄인다. 실제 촬영 시작 판단에는 has_current_face를 쓴다.
+        """
+        if self._latest_face_box is not None:
+            return True
+        if self._last_face_seen_at <= 0:
+            return False
+        return (time.monotonic() - self._last_face_seen_at) <= self._face_grace_seconds
 
     @property
     def latest_face_box(self) -> Optional[FaceBox]:
@@ -136,9 +159,12 @@ class CameraDetector:
     def _detect_faces(self, frame: np.ndarray):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = _face_cascade.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+            gray, scaleFactor=1.08, minNeighbors=4, minSize=(50, 50)
         )
         return faces
+
+    def _stable_threshold_for(self, face_ready_now: bool) -> int:
+        return self._ready_on_threshold if face_ready_now else self._ready_off_threshold
 
     @staticmethod
     def _largest_face_box(faces) -> Optional[FaceBox]:
@@ -170,6 +196,8 @@ class CameraDetector:
             self._latest_frame = frame.copy()
             self._latest_faces = faces
             self._latest_face_box = face_box
+            if face_box is not None:
+                self._last_face_seen_at = time.monotonic()
 
             # 미리보기 프레임 전달 (GUI가 MainThread에서 렌더링)
             if self.on_preview_frame is not None and not self._recording:
@@ -178,7 +206,7 @@ class CameraDetector:
             count = len(faces)
 
             # 얼굴 준비: 얼굴이 1명 이상이면 준비 완료
-            face_ready_now = count >= 1
+            face_ready_now = count >= 1 or self.has_recent_face()
 
             # 상태 안정화: 같은 상태가 일정 프레임 이상 유지되는지 확인
             if face_ready_now == self._candidate_ready:
@@ -188,7 +216,7 @@ class CameraDetector:
                 self._stable_count = 1
 
             # 안정화 기준에 도달하기 전에는 콜백 호출을 보류
-            if self._stable_count < self._stable_threshold:
+            if self._stable_count < self._stable_threshold_for(face_ready_now):
                 time.sleep(0.03)
                 continue
 
@@ -244,16 +272,28 @@ class CameraDetector:
         self.on_frames_ready(frames)
 
     def resume_detection(self):
-        """사람 수 감지 재개"""
-        if self._detecting:
-            print("[카메라] 이미 감지 중입니다.")
-            return
+        """사람 수 감지 재개 및 준비 상태 캐시 초기화.
+
+        촬영이 끝나면 _record_frames가 이미 _detecting=True로 되돌려 놓기 때문에,
+        '_detecting이 True면 그냥 반환' 하는 방식으로는 안정화 캐시가 초기화되지
+        않는다. 그러면 _last_face_ready가 직전 측정 시점의 True 값으로 남아,
+        재개 후 얼굴이 그대로 있어도 "상태 변화 없음"으로 간주되어
+        on_single_person_detected 콜백이 다시 발생하지 않는다.
+        그 결과 컨트롤러의 face_ready가 갱신되지 않아 측정 버튼이 재활성화되지 않는다.
+
+        따라서 이미 감지 중이더라도 안정화 캐시는 항상 초기화해, 재개 직후 첫 번째
+        안정 상태에서 face_ready 콜백이 반드시 다시 발생하도록 한다.
+        """
+        was_paused = not self._detecting
 
         self._detecting = True
 
-        # 상태 안정화 변수 초기화
+        # 상태 안정화 변수 초기화 (이미 감지 중이어도 강제로 초기화한다)
         self._last_face_ready = None
         self._candidate_ready = None
         self._stable_count = 0
 
-        print("[카메라] 감지 재개")
+        if was_paused:
+            print("[카메라] 감지 재개")
+        else:
+            print("[카메라] 감지 상태 초기화 (재측정 준비)")

@@ -1,7 +1,18 @@
 # main_app.py
 
+import os  # 런타임 환경 변수를 설정하기 위해 사용
 import sys  # 프로그램 실행/종료 인자를 다루기 위해 사용
 from enum import Enum, auto  # 상태 Enum을 만들기 위해 사용
+
+# Windows에서 PyQt5를 먼저 로드한 뒤 torch를 지연 import하면 torch c10.dll 초기화가
+# 실패하는 환경이 있다. 모델 파일 로드/추론은 여전히 InferenceWorker에서 수행하지만,
+# torch DLL 자체는 Qt보다 먼저 올려 DLL 로드 순서 충돌을 피한다.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "True")
+if "pytest" not in sys.modules:
+    try:
+        import torch  # noqa: F401
+    except Exception as exc:
+        print(f"[Sys][WARN] torch 사전 로드 실패: {exc}")
 
 from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, QTimer  # PyQt 핵심 클래스 import
 from PyQt5.QtWidgets import QApplication  # GUI 앱 진입점을 위해 import
