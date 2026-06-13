@@ -159,7 +159,7 @@ GUI 통합 시 중요한 보강점:
 
 현재 포함된 요소:
 
-- MediaPipe 기반 얼굴 검출과 정렬
+- MediaPipe 0.10.21 기반 얼굴 검출과 정렬
 - `FacePreprocessor`
 - `AFADPreprocessor`
 - TorchScript 모델 로드 실험 코드

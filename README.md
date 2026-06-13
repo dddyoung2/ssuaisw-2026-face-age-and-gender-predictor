@@ -21,7 +21,7 @@ PyQt5 GUI가 `SystemController`/카메라 Worker/추론 Worker/결과 후처리 
 
 - **Language**: Python 3.10+
 - **GUI Framework**: PyQt5
-- **Computer Vision**: OpenCV-Python, MediaPipe
+- **Computer Vision**: OpenCV-Python 4.11.0.86, MediaPipe 0.10.21
 - **Deep Learning**: PyTorch, TorchVision
 - **Test**: pytest
 

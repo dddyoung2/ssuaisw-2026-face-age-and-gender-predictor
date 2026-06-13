@@ -2,7 +2,7 @@
 
 ## 사전 준비
 
-이 프로젝트는 Python 3.10 이상을 기준으로 한다. 주요 의존성은 PyQt5, OpenCV, NumPy, PyTorch, TorchVision, MediaPipe, pytest이며 `pyproject.toml`에서 관리한다.
+이 프로젝트는 Python 3.10 이상을 기준으로 한다. 주요 의존성은 PyQt5, OpenCV, NumPy, PyTorch, TorchVision, MediaPipe 0.10.21, pytest이며 `pyproject.toml`에서 관리한다.
 
 GUI와 카메라를 확인하려면 다음 환경이 필요하다.
 
