@@ -9,6 +9,13 @@
 
 현재 앱은 PyQt5 GUI, `SystemController`, 카메라 Worker, 추론 Worker, 결과 후처리 모듈로 분리되어 있습니다. GUI는 MainThread에서 화면 표시와 사용자 입력만 담당하고, 카메라 읽기와 모델 추론은 QThread 기반 Worker에서 실행됩니다.
 
+## 👥 팀원 및 역할 소개 (Team Members & Roles)
+* [김도영](https://github.com/dddyoung2) - 시스템 통합 (System Architect / QA)
+* [김철현](https://github.com/cheolhyun-kim) - **팀장** & 딥러닝 모델 (**Team Leader** & DL Model Engineer)
+* [이승민]() - GUI 개발(UI/UX Design)
+* [이용욱]() - 데이터 전처리(Preprocessing Engineer)
+* [이준혁](https://github.com/norussi) - 인퍼런스 엔진 및 컴퓨터 비전 (Inference Engineer & Computer Vision)
+
 ## 주요 기능
 
 - OpenCV/MediaPipe 기반 웹캠 얼굴 감지
