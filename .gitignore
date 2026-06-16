@@ -32,3 +32,4 @@ models/*.onnx
 # AI agent local reports
 # IMPLEMENTATION.md / REVIEW.md 는 Acceptance가 요구하는 완료 산출물이므로 커밋 대상으로 유지한다.
 AI-Agents/archive/
+logs/

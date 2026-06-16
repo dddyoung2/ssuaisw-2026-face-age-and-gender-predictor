@@ -4,12 +4,12 @@ main_window.py
 PyQt5 GUI 화면 계층(View).
 
 이 창은 카메라 읽기/얼굴 감지/추론을 직접 수행하지 않는다. 모든 무거운 작업은
-SystemController와 WorkerThread가 담당하고, GUI는 다음만 책임진다.
+SystemController가 단일 Qt 이벤트 루프에서 담당하고, GUI는 다음만 책임진다.
 
 - 버튼 입력을 signal로 SystemController에 전달
 - SystemController가 보내주는 상태/프레임/진행률/결과/오류를 화면에 표시
 
-즉 GUI 위젯 갱신은 MainThread에서만 일어난다. (Worker는 GUI를 직접 수정하지 않는다.)
+즉 GUI 위젯 갱신과 앱 작업은 같은 Qt 이벤트 루프에서 순차적으로 일어난다.
 
 단독 실행(`python -m ...app.main_window`)도 가능하지만, 그 경우 SystemController가
 없으므로 카메라/추론 동작 없이 빈 창만 뜬다. 정식 진입점은 `app.main_app`이다.
@@ -1136,7 +1136,7 @@ class AgeEstimatorWindow(QMainWindow):
         self.update_responsive_layout(self.width())
 
     def closeEvent(self, event) -> None:
-        # 종료를 SystemController에 알려 카메라/QThread를 정리하게 한다.
+        # 종료를 SystemController에 알려 카메라 자원을 정리하게 한다.
         self.close_requested.emit()
         event.accept()
 

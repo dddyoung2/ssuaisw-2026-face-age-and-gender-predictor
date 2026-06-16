@@ -111,7 +111,7 @@ def test_predict_frames_empty_returns_empty():
 
 def test_predict_frames_propagates_critical_preprocessing_error(monkeypatch):
     """얼굴 미검출(None skip)과 달리, 치명적 전처리 예외는 빈 prediction으로 숨기지
-    않고 그대로 전파되어야 한다(InferenceWorker.error_occurred 도달 보장)."""
+    않고 그대로 전파되어야 한다(컨트롤러 error_occurred 도달 보장)."""
     monkeypatch.setattr(cnn, "_get_cached_model", lambda model_path=None: (object(), "cpu"))
 
     def boom(frame, target_size=cnn.MODEL_INPUT_SIZE):
