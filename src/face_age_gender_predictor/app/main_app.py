@@ -2,7 +2,9 @@
 
 import os  # 런타임 환경 변수를 설정하기 위해 사용
 import sys  # 프로그램 실행/종료 인자를 다루기 위해 사용
+import argparse
 from enum import Enum, auto  # 상태 Enum을 만들기 위해 사용
+from pathlib import Path
 
 # Windows에서 PyQt5를 먼저 로드한 뒤 torch를 지연 import하면 torch c10.dll 초기화가
 # 실패하는 환경이 있다. 모델 파일 로드/추론은 여전히 InferenceWorker에서 수행하지만,
@@ -22,6 +24,7 @@ from face_age_gender_predictor.app.workers import (
     CameraBridgeWorker,
     InferenceWorker,
 )  # Worker 클래스들 import
+from face_age_gender_predictor.processing.run_metrics import RunMetricLogger
 
 
 class AppState(Enum):
@@ -60,7 +63,11 @@ class SystemController(QObject):
     result_ready = pyqtSignal(dict)  # 최종 result dict (success/failure 모두)
     error_occurred = pyqtSignal(str)  # 오류 메시지
 
-    def __init__(self, camera_index: int = 0):  # 생성자
+    def __init__(
+        self,
+        camera_index: int = 0,
+        log_dir: str | Path = "logs/threaded_runs",
+    ):  # 생성자
         super().__init__()  # QObject 초기화
 
         self.camera_index = camera_index  # 사용할 카메라 번호
@@ -79,6 +86,11 @@ class SystemController(QObject):
         self.countdown_timer.setInterval(1000)  # 1초마다 timeout 발생
         self.countdown_timer.timeout.connect(self._on_countdown_tick)  # countdown 처리 함수 연결
 
+        self.metrics = RunMetricLogger(log_dir=log_dir, mode="threaded")
+        self.heartbeat_timer = QTimer(self)
+        self.heartbeat_timer.setInterval(250)
+        self.heartbeat_timer.timeout.connect(self._on_gui_heartbeat)
+
         self._shutting_down = False  # 종료 중복 호출 방지 플래그
 
     # ===== 상태 관리 =====
@@ -87,7 +99,11 @@ class SystemController(QObject):
         self.state = new_state  # 새 상태 저장
         print(f"[Sys] 상태 변경 → {self.state.name}")  # 상태 변경 출력
         self.state_changed.emit(self.state.name)  # GUI에 상태 이름 전달
+        self.metrics.event("state_changed", state=self.state.name)
         self._emit_measure_enabled()  # 상태에 따른 측정 버튼 활성화 갱신
+
+    def _on_gui_heartbeat(self):
+        self.metrics.event("gui_heartbeat", state=self.state.name)
 
     def _is_busy(self) -> bool:  # 측정 진행 중인지 여부
         return self.state in {
@@ -107,6 +123,10 @@ class SystemController(QObject):
         if self.camera_thread is not None:  # 이미 카메라가 실행 중이면
             print("[Sys] 카메라가 이미 실행 중입니다.")  # 안내 출력
             return  # 함수 종료
+
+        self.metrics.start_run(camera_index=self.camera_index)
+        self.metrics.mark("camera_start_requested")
+        self.heartbeat_timer.start()
 
         self.camera_thread = QThread()  # 카메라용 QThread 생성
         self.camera_worker = CameraBridgeWorker(camera_index=self.camera_index)  # 카메라 Worker 생성
@@ -140,6 +160,7 @@ class SystemController(QObject):
     def _on_camera_started(self):  # 카메라가 실제로 시작된 뒤 호출
         self.camera_running = True  # 카메라 실행 상태 갱신
         self.camera_running_changed.emit(True)  # GUI에 카메라 실행 알림
+        self.metrics.mark("camera_started")
         self._emit_measure_enabled()  # 측정 버튼 상태 갱신
 
     @pyqtSlot()
@@ -184,8 +205,11 @@ class SystemController(QObject):
 
         if ready:  # 얼굴이 준비되었으면
             print("[Sys] 얼굴 감지됨 → 측정 준비 완료")  # 준비 완료 출력
+            self.metrics.mark_once("first_face_ready")
         else:  # 얼굴이 준비되지 않았으면
             print("[Sys] 얼굴 미감지 → 측정 불가")  # 준비 해제 출력
+
+        self.metrics.event("face_ready_changed", ready=ready)
 
         self.face_ready_changed.emit(ready)  # GUI로 전달
         self._emit_measure_enabled()  # 측정 버튼 상태 갱신
@@ -214,6 +238,7 @@ class SystemController(QObject):
             self.status_changed.emit("[Sys] 얼굴이 준비되지 않았습니다.")  # 안내
             return  # 함수 종료
 
+        self.metrics.mark("measurement_requested")
         self._set_state(AppState.COUNTDOWN)  # 상태를 COUNTDOWN으로 변경 (측정 버튼 비활성화)
         self.countdown_value = 3  # 카운트다운 값을 3으로 초기화
         self.countdown_changed.emit(self.countdown_value)  # 첫 숫자를 GUI에 전달
@@ -248,6 +273,7 @@ class SystemController(QObject):
 
         self._set_state(AppState.CAPTURING)  # 상태를 CAPTURING으로 변경
         print("[Sys] CameraWorker에 40프레임 촬영 요청")  # 촬영 요청 메시지
+        self.metrics.mark("capture_started")
         self.start_capture_requested.emit()  # CameraWorker에 촬영 요청 (CameraThread에서 실행)
 
     @pyqtSlot(object)
@@ -257,6 +283,7 @@ class SystemController(QObject):
             return  # 함수 종료
 
         print(f"[Sys] frames_ready 수신 → {len(frames)}프레임")  # 프레임 수 출력
+        self.metrics.mark("capture_finished", frames=len(frames))
         self._set_state(AppState.ANALYZING)  # 상태를 ANALYZING으로 변경
         self._start_inference_worker(frames)  # 추론 WorkerThread 시작
 
@@ -269,6 +296,7 @@ class SystemController(QObject):
 
         self.inference_thread = QThread()  # 추론용 QThread 생성
         self.inference_worker = InferenceWorker(frames)  # frames를 가진 추론 Worker 생성
+        self.metrics.mark("inference_started", frames=len(frames))
 
         self.inference_worker.moveToThread(self.inference_thread)  # Worker를 추론 Thread로 이동
 
@@ -291,6 +319,11 @@ class SystemController(QObject):
 
     @pyqtSlot(dict)
     def on_inference_done(self, result: dict):  # 추론 완료 (성공/실패 result dict)
+        self.metrics.mark(
+            "inference_finished",
+            success=bool(result.get("success")),
+            valid_count=result.get("valid_count"),
+        )
         if result.get("success"):  # 성공 result면
             self._set_state(AppState.DONE)  # 상태를 DONE으로 변경
             print(
@@ -308,6 +341,18 @@ class SystemController(QObject):
             )
 
         self.result_ready.emit(result)  # GUI로 성공/실패 result 전달
+        self.metrics.mark(
+            "result_ready",
+            success=bool(result.get("success")),
+            valid_count=result.get("valid_count"),
+        )
+        summary = self.metrics.finish(
+            success=bool(result.get("success")),
+            reason=result.get("reason"),
+            result=result,
+        )
+        print(summary.to_terminal_text())
+        self.heartbeat_timer.stop()
         self._return_to_idle()  # 재측정 가능한 IDLE 상태로 복귀
 
     @pyqtSlot()
@@ -322,6 +367,10 @@ class SystemController(QObject):
         self._set_state(AppState.ERROR)  # 상태를 ERROR로 변경
         print(f"[Sys][ERROR] {message}")  # 오류 메시지 출력
         self.error_occurred.emit(message)  # GUI로 오류 전달
+        if self.metrics.is_active:
+            summary = self.metrics.finish(success=False, reason=message)
+            print(summary.to_terminal_text())
+        self.heartbeat_timer.stop()
         self._return_to_idle()  # 복구 가능한 IDLE 상태로 복귀
 
     def _return_to_idle(self):  # 성공/실패 후 재측정 가능한 상태로 복귀
@@ -347,6 +396,9 @@ class SystemController(QObject):
 
         if self.countdown_timer.isActive():  # 카운트다운 타이머가 켜져 있으면
             self.countdown_timer.stop()  # 타이머 정지
+
+        if self.heartbeat_timer.isActive():
+            self.heartbeat_timer.stop()
 
         # 추론 Thread 정리
         if self.inference_thread is not None:  # 추론이 진행 중이면
@@ -386,17 +438,38 @@ def connect_window_and_controller(window, controller: SystemController) -> None:
     controller.error_occurred.connect(window.on_error_message)
 
 
-def main():  # 프로그램 시작 함수 (PyQt5 GUI 진입점)
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the threaded GUI app with metrics.")
+    parser.add_argument(
+        "--camera-index",
+        "-c",
+        type=int,
+        default=0,
+        help="OpenCV camera index. Try 1 or 2 for DroidCam.",
+    )
+    parser.add_argument(
+        "--log-dir",
+        default="logs/threaded_runs",
+        help="Directory where CSV/JSON run metrics are saved.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None):  # 프로그램 시작 함수 (PyQt5 GUI 진입점)
+    args = parse_args(argv)
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)  # High DPI 스케일링
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)  # High DPI 픽스맵
 
-    app = QApplication(sys.argv)  # GUI Qt 이벤트 루프 생성
+    app = QApplication(sys.argv[:1])  # GUI Qt 이벤트 루프 생성
     app.setStyle("Fusion")  # Fusion 스타일 적용
 
     # 순환 import를 피하기 위해 함수 내부에서 import
     from face_age_gender_predictor.app.main_window import AgeEstimatorWindow
 
-    controller = SystemController()  # Sys Controller 생성
+    controller = SystemController(
+        camera_index=args.camera_index,
+        log_dir=args.log_dir,
+    )  # Sys Controller 생성
     window = AgeEstimatorWindow()  # GUI 창 생성
 
     connect_window_and_controller(window, controller)  # GUI와 Controller 연결
@@ -409,4 +482,4 @@ def main():  # 프로그램 시작 함수 (PyQt5 GUI 진입점)
 
 
 if __name__ == "__main__":  # 이 파일을 직접 실행했을 때만
-    main()  # main 함수 실행
+    main(sys.argv[1:])  # main 함수 실행
