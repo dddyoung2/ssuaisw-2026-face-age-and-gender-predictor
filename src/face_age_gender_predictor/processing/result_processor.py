@@ -45,6 +45,7 @@ result_processor.py
   process_predictions(predictions, on_result_ready=결과_전달)
 """
 
+import math
 from typing import Callable, List, Optional
 
 # 유효 prediction이 이 값 이상이어야 성공으로 본다. (docs/SPEC.md S6 기준)
@@ -108,10 +109,14 @@ def process_predictions(
 
     n = valid_count
 
-    # 유효 prediction 전체 평균
-    avg_age = sum(p["age"] for p in valid) / n
-    avg_gender = sum(p["gender"] for p in valid) / n
-    avg_gender_confidence = sum(p["gender_confidence"] for p in valid) / n
+    # 유효 prediction 전체 평균.
+    # math.fsum으로 부동소수점 합산 오차를 줄여 평균 집계를 안정화한다.
+    # (수학적으로 평균이 정확히 0.5인 gender 입력이 일반 sum의 누적 오차로 0.5보다
+    #  미세하게 작아져 `>= 0.5` 경계에서 0으로 잘못 판정되는 CI 실패를 방지한다.
+    #  정책은 그대로이고 numeric stability만 보강한다.)
+    avg_age = math.fsum(p["age"] for p in valid) / n
+    avg_gender = math.fsum(p["gender"] for p in valid) / n
+    avg_gender_confidence = math.fsum(p["gender_confidence"] for p in valid) / n
 
     # age_probs: 원소별 평균
     probs_len = len(valid[0]["age_probs"])

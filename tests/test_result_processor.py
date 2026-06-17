@@ -107,3 +107,53 @@ def test_invalid_majority_drops_below_threshold():
     assert result["success"] is False
     assert result["valid_count"] == 29
     assert result["reason"] == "valid_count_below_30"
+
+
+# --------------------------------------------------------------------
+# 성별 최종 집계 기준: average_gender >= 0.5 -> 1(여성), < 0.5 -> 0(남성)
+# --------------------------------------------------------------------
+
+def test_average_gender_above_half_is_female():
+    # 평균 gender = 0.8 (>= 0.5) -> 최종 gender == 1
+    predictions = [_make_prediction(age=25.0, gender=0.8, confidence=0.9) for _ in range(40)]
+    result = _run(predictions)
+
+    assert result["gender"] == 1
+
+
+def test_average_gender_below_half_is_male():
+    # 평균 gender = 0.2 (< 0.5) -> 최종 gender == 0
+    predictions = [_make_prediction(age=25.0, gender=0.2, confidence=0.9) for _ in range(40)]
+    result = _run(predictions)
+
+    assert result["gender"] == 0
+
+
+def test_average_gender_exactly_half_is_female():
+    # 경계값: 평균 gender == 0.5 -> 최종 gender == 1 (여성)
+    predictions = [_make_prediction(age=25.0, gender=0.5, confidence=0.9) for _ in range(40)]
+    result = _run(predictions)
+
+    assert result["gender"] == 1
+
+
+def test_age_and_gender_confidence_averages_preserved_with_gender_change():
+    # 성별 집계와 무관하게 age 평균/gender_confidence 평균 집계가 유지되는지 확인
+    predictions = [_make_prediction(age=20.0, gender=0.1, confidence=0.6) for _ in range(20)] + [
+        _make_prediction(age=30.0, gender=0.9, confidence=0.8) for _ in range(20)
+    ]
+    result = _run(predictions)
+
+    assert result["age"] == pytest.approx(25.0)            # 기존 age 평균 방식 유지
+    assert result["gender_confidence"] == pytest.approx(0.7)  # 기존 gender_confidence 평균 유지
+    assert result["gender"] == 1                            # 평균 gender 0.5 -> 1
+
+
+def test_below_threshold_fails_regardless_of_gender_average():
+    # 유효 prediction 29개이고 평균 gender가 1.0이어도 실패 result가 유지된다
+    predictions = [_make_prediction(age=25.0, gender=1.0, confidence=0.9) for _ in range(29)]
+    result = _run(predictions)
+
+    assert result["success"] is False
+    assert result["gender"] is None
+    assert result["reason"] == "valid_count_below_30"

@@ -19,6 +19,7 @@ __pycache__/
 assets/
 dontuse/
 .claude/
+logs/
 
 # Python package metadata
 *.egg-info/

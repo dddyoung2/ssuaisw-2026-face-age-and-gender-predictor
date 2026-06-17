@@ -1,96 +1,77 @@
 # ACCEPTANCE
 
-This task is complete when the following conditions are met.
+이 작업은 아래 조건을 만족하면 완료로 본다.
 
-## Scope Fit
+## Scope
 
-- [ ] The implementer confirms the work remains within the real-time face age/gender predictor scope.
-- [ ] The implementer confirms this is handled as QThread integration owner work: camera/model processing is connected through the existing QThread architecture, not through a new parallel app path.
-- [ ] Any discovered out-of-scope item is reported before implementation rather than silently added.
+- [ ] 구현자는 이 작업이 "GUI 디자인 변경"에 한정된 작업임을 확인했다.
+- [ ] 첨부된 구버전 `main_window.py`를 코드 전체 교체본이 아니라 디자인 참고 자료로만 사용했다.
+- [ ] 현재 출력/추론/집계 로직을 변경하지 않았다.
+- [ ] 나이 확신도 계산 공식은 현행 표준편차 기반 방식을 유지했다.
+- [ ] 성별 표시 contract와 result_processor 집계 정책을 변경하지 않았다.
+- [ ] GitHub CI에서 실패했던 `average_gender == 0.5` 경계 케이스가 안정적으로 `gender == 1`을 반환한다.
+- [ ] camera/worker/thread/timer/signal-slot 흐름을 변경하지 않았다.
+- [ ] 모델 파일, 모델 학습, 모델 inference 코드를 변경하지 않았다.
+- [ ] 새 기능 추가나 광범위한 구조 변경을 하지 않았다.
 
-## Re-Measurement Flow
+## Design Requirements
 
-- [ ] After one successful measurement, the app returns to a recoverable idle/detection state without restarting.
-- [ ] Camera detection resumes automatically after a successful result when the camera is still running.
-- [ ] The measurement button is disabled immediately after completion until a new ready face is detected.
-- [ ] When a face is detected again, the measurement button becomes enabled again.
-- [ ] Re-enabling the measurement button does not automatically clear the previous result display.
-- [ ] Previous face preview/photo, graph/probability display, age, gender, and confidence remain visible until the user starts the next measurement.
-- [ ] When the user starts the next measurement, stale result/progress/countdown/captured-preview UI is reset for the new run.
-- [ ] A second measurement can be started and completed in the same app session.
-- [ ] Failure paths also recover to detection/idle where retry is possible.
-- [ ] The previous result display does not block a later measurement.
-- [ ] Camera stop/start still works after one or more measurements.
-- [ ] App shutdown still releases camera and worker resources.
+- [ ] GUI 전체가 밝은 블루/화이트 계열의 일관된 visual style을 갖는다.
+- [ ] 주요 패널/카드/결과 영역은 옅은 border, 적절한 padding, readable한 contrast를 가진다.
+- [ ] primary 버튼과 진행 표시가 light theme에 맞게 정리되어 있다.
+- [ ] 측정 전/측정 중/결과 표시/실패 상태에서 버튼 스타일과 상태가 명확하다.
+- [ ] preview image 또는 camera preview 영역이 깨지거나 찌그러지지 않는다.
+- [ ] result metric card 또는 결과 표시 영역의 텍스트가 겹치지 않는다.
+- [ ] histogram 영역은 배경과 구분되며 현재 값 표시가 읽기 쉽다.
+- [ ] 작은 창 크기에서도 주요 라벨과 버튼 텍스트가 parent 영역 밖으로 넘치지 않는다.
+- [ ] 카드 안에 불필요하게 중첩된 카드 구조를 만들지 않았다.
 
-## Model Integration
+## Logic Preservation
 
-- [ ] `CNNmodel.py` can be imported without loading the model.
-- [ ] `CNNmodel.py` can be imported without reading sample images, running sample inference, printing final sample output, or opening plots.
-- [ ] `CNNmodel.py` exposes `predict_frames(frames: list) -> list[dict]`.
-- [ ] The default model path is repository-root-relative `models/Best_Age_Estimate_model_traced.pt`.
-- [ ] The path resolver works from the normal `main_app` execution flow, not only from the repository root current working directory.
-- [ ] If the expected `.pt` file is missing, the app reports a clear model-file error instead of returning fake predictions.
-- [ ] The missing-file error message names `models/Best_Age_Estimate_model_traced.pt`.
-- [ ] TorchScript model loading is lazy and occurs only when prediction is requested.
-- [ ] Model loading is cached/reused where reasonable for repeated measurements.
-- [ ] `InferenceWorker` calls `CNNmodel.predict_frames(self.frames)`.
-- [ ] `InferenceWorker` no longer generates random temporary predictions for the production path.
-- [ ] Prediction dicts contain `age`, `gender`, `age_probs`, and `gender_confidence`.
-- [ ] Prediction dicts are compatible with `result_processor.process_predictions`.
-- [ ] Unusable frames are skipped or handled without arbitrary placeholder predictions.
-- [ ] Model load/preprocessing/inference exceptions are routed to `error_occurred`.
-- [ ] `finished` is emitted after inference success or failure.
+- [ ] 나이 확신도는 26-bin 나이 분포의 weighted standard deviation 기반으로 계산된다.
+- [ ] 표준편차 `1.57 -> 99%`, `8.23 -> 1%` mapping이 유지된다.
+- [ ] confidence clamp 범위 `[1%, 99%]`가 유지된다.
+- [ ] invalid `age_probs`가 높은 confidence로 fallback하지 않는다.
+- [ ] 첨부 파일의 예전 predicted-age `±2` probability mass 방식이 되살아나지 않았다.
+- [ ] age histogram의 값 생성/validity 처리 정책이 현행 로직과 일치한다.
+- [ ] `gender == 1 -> 여성`, `gender == 0 -> 남성` 표시 contract가 유지된다.
+- [ ] `gender_confidence` 표시 방식과 값 계산이 유지된다.
+- [ ] `result_processor`의 `average_gender >= 0.5 -> 1`, `< 0.5 -> 0` 정책을 변경하지 않았다.
+- [ ] 수학적으로 `average_gender == 0.5`인 입력이 부동소수점 합산 오차 때문에 `0`으로 판정되지 않는다.
+- [ ] 성별 평균 안정화가 필요해 `result_processor.py`를 수정했다면, 정책 변경 없이 numeric stability 최소 수정으로만 처리했다.
+- [ ] 기존 age 평균 집계 방식은 변경하지 않았다.
+- [ ] 유효 prediction 30개 미만 실패 조건은 변경하지 않았다.
+- [ ] result dict contract를 breaking change하지 않았다.
 
-## QThread / Threading
+## Tests / Verification
 
-- [ ] Camera capture runs through `CameraBridgeWorker` / `CameraDetector`, not GUI slots.
-- [ ] 40-frame capture does not run in the GUI MainThread.
-- [ ] Model preprocessing does not run in the GUI MainThread.
-- [ ] TorchScript model loading and forward pass do not run in the GUI MainThread.
-- [ ] `InferenceWorker` runs in `InferenceThread`.
-- [ ] `python -m face_age_gender_predictor.app.main_app` uses the QThread-connected `SystemController` -> `InferenceWorker` -> `CNNmodel.predict_frames` path.
-- [ ] GUI updates are performed via signals/slots.
-- [ ] `inference_thread` and `inference_worker` references are cleared after completion.
-- [ ] Camera worker/thread cleanup still works after stop and app shutdown.
-- [ ] Re-measurement does not create duplicate stale workers or duplicate signal connections.
-
-## Tests
-
-- [ ] Automated tests pass without requiring the real `.pt` file.
-- [ ] A test verifies `CNNmodel.py` import has no model-load/sample-run side effects.
-- [ ] A test verifies the default model path resolves to repository-root `models/Best_Age_Estimate_model_traced.pt`.
-- [ ] A test verifies `InferenceWorker` delegates to `predict_frames`.
-- [ ] A test verifies inference exceptions are routed to `error_occurred` and `finished`.
-- [ ] A test verifies second-measurement recovery or the equivalent controller state transition.
-- [ ] A test or documented smoke check verifies the normal `main_app` path is wired to the QThread-based inference flow.
-- [ ] Existing camera detector tests pass.
-- [ ] Existing result processor tests pass.
-- [ ] If real `.pt` execution cannot be tested locally, it is recorded as Not Verified with the reason.
-
-## Manual QA
-
-- [ ] Start app and camera.
-- [ ] Confirm face ready enables the capture/analysis button.
-- [ ] Complete one normal measurement.
-- [ ] Confirm detection resumes automatically.
-- [ ] Confirm the capture/analysis button is re-enabled when the face is ready again.
-- [ ] Complete a second measurement without restarting the app.
-- [ ] Confirm missing model file shows a clear GUI error if the `.pt` file is unavailable.
-- [ ] Confirm closing the app releases the camera.
+- [ ] `main_window.py` 문법 검증 또는 import 검증을 수행했다.
+- [ ] 관련 GUI 테스트가 있다면 실행했고 통과했다.
+- [ ] `tests/test_result_processor.py`를 실행했고 GitHub CI 실패 케이스가 통과했다.
+- [ ] 전체 pytest가 가능한 환경이면 실행했고 결과를 기록했다.
+- [ ] 디자인 변경 때문에 기존 테스트를 수정했다면, 구버전 첨부 코드가 아니라 현행 로직 기준으로 수정했다.
+- [ ] 성공 result 표시에서 나이, 성별, 성별 확신도, 나이 확신도, histogram이 표시되는지 확인했다.
+- [ ] 실패 result 표시에서 앱이 멈추지 않고 버튼 상태가 복구되는지 확인했다.
+- [ ] invalid `age_probs` 표시 정책이 깨지지 않았는지 확인했다.
+- [ ] 수동 GUI QA를 수행하지 못했다면 `IMPLEMENTATION.md`의 Not Verified에 기록했다.
 
 ## Documentation
 
-- [ ] `AI-Agents/IMPLEMENTATION.md` records changed files.
-- [ ] `AI-Agents/IMPLEMENTATION.md` records test commands and results.
-- [ ] `AI-Agents/IMPLEMENTATION.md` records whether repository-root `models/Best_Age_Estimate_model_traced.pt` was visible in the execution environment and whether real model inference was verified.
-- [ ] `AI-Agents/IMPLEMENTATION.md` records any model output-shape assumptions or mismatches.
-- [ ] `AI-Agents/REVIEW.md` is left for Codex QA.
-- [ ] `AI-Agents/PR.md` is not written by Claude Code.
+- [ ] `AI-Agents/IMPLEMENTATION.md`에 변경 요약이 기록되었다.
+- [ ] `AI-Agents/IMPLEMENTATION.md`에 변경 파일이 기록되었다.
+- [ ] `AI-Agents/IMPLEMENTATION.md`에 첨부 구버전 코드에서 반영한 디자인 요소가 기록되었다.
+- [ ] `AI-Agents/IMPLEMENTATION.md`에 변경하지 않은 로직과 그 이유가 기록되었다.
+- [ ] GitHub CI 실패를 수정했다면 `AI-Agents/IMPLEMENTATION.md`에 원인, 수정 방식, 테스트 결과가 기록되었다.
+- [ ] `AI-Agents/IMPLEMENTATION.md`에 테스트 명령과 결과가 기록되었다.
+- [ ] `AI-Agents/IMPLEMENTATION.md`에 미검증 항목 또는 후속 작업이 기록되었다.
+- [ ] `AI-Agents/REVIEW.md`는 Codex QA 대기 템플릿 상태로 남겨졌다.
+- [ ] `AI-Agents/PR.md`는 Codex Release 대기 템플릿 상태로 남겨졌다.
 
 ## Guardrails
 
-- [ ] No `.env`, secret, personal image, or large model file is added.
-- [ ] No `models/*.pt`, `models/*.pth`, or `models/*.onnx` file is modified or staged.
-- [ ] No unrelated refactor is included.
-- [ ] No direct push to `main`.
+- [ ] `.env`, secret, 개인 이미지, 대용량 모델 파일이 추가/수정되지 않았다.
+- [ ] `models/*.pt`, `models/*.pth`, `models/*.onnx`가 수정/stage 대상이 아니다.
+- [ ] 빌드 산출물, 캐시 산출물, 임시 파일을 커밋 대상으로 만들지 않았다.
+- [ ] Git commit/push/PR을 수행하지 않았다.
+- [ ] 관련 없는 문서나 시스템 파일을 수정하지 않았다.
+- [ ] `AI-Agents/PR.md`는 구현자가 작성/갱신하지 않았다.
