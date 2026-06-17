@@ -23,8 +23,8 @@ def _success_result():
     }
 
 
-def test_success_returns_to_idle_and_requests_resume(qapp):
-    controller = SystemController()
+def test_success_returns_to_idle_and_requests_resume(qapp, tmp_path):
+    controller = SystemController(log_dir=tmp_path)
     controller.camera_running = True
     controller.face_ready = True
 
@@ -41,8 +41,8 @@ def test_success_returns_to_idle_and_requests_resume(qapp):
     assert enabled[-1] is False                     # 완료 직후 측정 버튼 비활성화
 
 
-def test_second_measurement_after_redetect(qapp):
-    controller = SystemController()
+def test_second_measurement_after_redetect(qapp, tmp_path):
+    controller = SystemController(log_dir=tmp_path)
     controller.camera_running = True
     controller.face_ready = True
 
@@ -65,8 +65,8 @@ def test_second_measurement_after_redetect(qapp):
     controller.countdown_timer.stop()
 
 
-def test_failure_recovers_to_idle_and_requests_resume(qapp):
-    controller = SystemController()
+def test_failure_recovers_to_idle_and_requests_resume(qapp, tmp_path):
+    controller = SystemController(log_dir=tmp_path)
     controller.camera_running = True
     controller.face_ready = True
 
@@ -82,8 +82,8 @@ def test_failure_recovers_to_idle_and_requests_resume(qapp):
     assert resume == [True]                         # 카메라 켜져 있으면 감지 재개 요청
 
 
-def test_measure_request_ignored_when_busy(qapp):
-    controller = SystemController()
+def test_measure_request_ignored_when_busy(qapp, tmp_path):
+    controller = SystemController(log_dir=tmp_path)
     controller.camera_running = True
     controller.face_ready = True
 
