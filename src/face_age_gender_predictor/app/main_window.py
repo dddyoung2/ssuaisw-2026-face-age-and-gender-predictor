@@ -3,16 +3,9 @@ main_window.py
 ==============
 PyQt5 GUI 화면 계층(View).
 
-이 창은 카메라 읽기/얼굴 감지/추론을 직접 수행하지 않는다. 모든 무거운 작업은
-SystemController와 WorkerThread가 담당하고, GUI는 다음만 책임진다.
-
-- 버튼 입력을 signal로 SystemController에 전달
-- SystemController가 보내주는 상태/프레임/진행률/결과/오류를 화면에 표시
-
-즉 GUI 위젯 갱신은 MainThread에서만 일어난다. (Worker는 GUI를 직접 수정하지 않는다.)
-
-단독 실행(`python -m ...app.main_window`)도 가능하지만, 그 경우 SystemController가
-없으므로 카메라/추론 동작 없이 빈 창만 뜬다. 정식 진입점은 `app.main_app`이다.
+디자인은 첨부된 구버전 GUI(밝은 블루/화이트 light theme)를 기준으로 정렬했고,
+로직(나이 확신도 표준편차 공식, invalid age_probs 방어, 성별 표시 contract)은
+현행을 유지한다. 즉 구버전의 예측 나이 ±2세 확률 질량 방식은 사용하지 않는다.
 """
 
 import math
@@ -44,7 +37,6 @@ class AppState(Enum):
     ERROR = auto()
 
 
-# SystemController(AppState)의 상태 이름 → GUI 표시 상태 매핑
 CONTROLLER_STATE_MAP = {
     "IDLE": AppState.IDLE,
     "COUNTDOWN": AppState.COUNTDOWN,
@@ -65,10 +57,10 @@ class StateMeta:
 
 STATE_META = {
     AppState.IDLE: StateMeta("대기 중", "IDLE", "카메라를 시작하면 실시간 얼굴 인식 화면이 열립니다.", "#64748b"),
-    AppState.READY: StateMeta("준비 완료", "READY", "얼굴을 가이드 박스 안에 맞춘 뒤 측정을 시작해주세요.", "#8DD8F8"),
+    AppState.READY: StateMeta("준비 완료", "READY", "얼굴을 가이드 박스 안에 맞춘 뒤 측정을 시작해주세요.", "#2563eb"),
     AppState.COUNTDOWN: StateMeta("카운트다운", "COUNTDOWN", "곧 촬영이 시작됩니다. 잠시 가만히 있어주세요.", "#f59e0b"),
-    AppState.COLLECTING: StateMeta("프레임 캡처 중", "CAPTURING", "40프레임을 캡처하는 중입니다. 움직이지 말아주세요.", "#38bdf8"),
-    AppState.ANALYZING: StateMeta("분석 중", "ANALYZING", "수집한 프레임으로 나이와 성별을 추정하고 있습니다.", "#8b5cf6"),
+    AppState.COLLECTING: StateMeta("프레임 캡처 중", "CAPTURING", "40프레임을 캡처하는 중입니다. 움직이지 말아주세요.", "#2563eb"),
+    AppState.ANALYZING: StateMeta("분석 중", "ANALYZING", "수집한 프레임으로 나이와 성별을 추정하고 있습니다.", "#7c3aed"),
     AppState.DONE: StateMeta("측정 완료", "DONE", "측정된 얼굴과 결과가 아래에 표시되었습니다.", "#10b981"),
     AppState.ERROR: StateMeta("오류", "ERROR", "카메라 또는 얼굴 인식 상태를 확인해주세요.", "#ef4444"),
 }
@@ -113,7 +105,7 @@ class MetricCard(QFrame):
         super().__init__(parent)
         self.setObjectName("accentMetricCard" if accent else "metricCard")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setMinimumHeight(84 if not accent else 92)
+        self.setMinimumHeight(74)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 12)
@@ -143,7 +135,7 @@ class MetricCard(QFrame):
             f"""
             color: {color};
             font-size: {size}px;
-            font-weight: 700;
+            font-weight: 900;
             min-height: {min_height}px;
             padding: 0px;
             """
@@ -154,7 +146,7 @@ class AgeHistogramWidget(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.values = [0] * 26
-        self.setMinimumHeight(210)
+        self.setMinimumHeight(178)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     def set_values(self, values: list[int]) -> None:
@@ -174,30 +166,30 @@ class AgeHistogramWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         rect = self.rect()
-        painter.fillRect(rect, QColor("#091522"))
+        painter.fillRect(rect, QColor("#ffffff"))
 
-        painter.setPen(QPen(QColor("#21314a"), 1))
-        painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 18, 18)
+        painter.setPen(QPen(QColor("#d7e3f2"), 1))
+        painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 14, 14)
 
-        title_font = QFont("Pretendard", 11)
+        title_font = QFont("Pretendard", 10)
         title_font.setWeight(QFont.Bold)
         painter.setFont(title_font)
-        painter.setPen(QColor("#f8fafc"))
-        painter.drawText(16, 28, "나이 히스토그램")
+        painter.setPen(QColor("#172033"))
+        painter.drawText(14, 26, "나이 히스토그램")
 
         chart_left = 16
         chart_top = 48
         chart_right = rect.width() - 16
-        chart_bottom = rect.height() - 34
+        chart_bottom = rect.height() - 30
         chart_width = max(1, chart_right - chart_left)
         chart_height = max(1, chart_bottom - chart_top)
 
-        painter.setPen(QPen(QColor("#1f2c40"), 1))
+        painter.setPen(QPen(QColor("#d7e3f2"), 1))
         painter.drawLine(chart_left, chart_bottom, chart_right, chart_bottom)
 
         max_value = max(self.values) if self.values else 0
         if max_value <= 0:
-            painter.setPen(QColor("#7e92ad"))
+            painter.setPen(QColor("#7a8799"))
             painter.drawText(rect, Qt.AlignCenter, "측정 후 15~40세 나이 분포가 표시됩니다.")
             return
 
@@ -212,7 +204,7 @@ class AgeHistogramWidget(QWidget):
             x = chart_left + index * (bar_width + bar_gap)
             y = chart_bottom - bar_height
 
-            color = QColor("#f8d66d") if value == max_value else QColor("#38bdf8")
+            color = QColor("#2563eb") if value == max_value else QColor("#93c5fd")
             painter.setBrush(color)
             painter.setPen(Qt.NoPen)
             painter.drawRoundedRect(QRectF(x, y, bar_width, bar_height), 3, 3)
@@ -220,7 +212,7 @@ class AgeHistogramWidget(QWidget):
             if age in {15, 20, 25, 30, 35, 40}:
                 label_font = QFont("Pretendard", 7)
                 painter.setFont(label_font)
-                painter.setPen(QColor("#8ba2bf"))
+                painter.setPen(QColor("#8a98aa"))
                 painter.drawText(
                     QRectF(x - 6, chart_bottom + 5, bar_width + 12, 16),
                     Qt.AlignCenter,
@@ -230,6 +222,7 @@ class AgeHistogramWidget(QWidget):
 
 # ====================================================================
 # 나이 확신도(age confidence) 계산 — 26-bin(15~40세) 분포의 weighted stddev 기반
+# (구버전 첨부 코드의 ±2세 확률 질량 방식은 사용하지 않는다.)
 # ====================================================================
 
 # 나이 분포는 15..40세 26개 bin이다.
@@ -316,7 +309,6 @@ class AgeEstimatorWindow(QMainWindow):
     AGE_MIN = 15
     AGE_MAX = 40
 
-    # --- GUI → SystemController 로 보내는 입력 signal ---
     start_camera_requested = pyqtSignal()
     measurement_requested = pyqtSignal()
     stop_camera_requested = pyqtSignal()
@@ -328,7 +320,6 @@ class AgeEstimatorWindow(QMainWindow):
         self.resize(1280, 800)
         self.setMinimumSize(900, 640)
 
-        # 표시용 상태 (SystemController가 갱신한다)
         self.state = AppState.IDLE
         self.camera_running = False
         self.face_ready = False
@@ -337,9 +328,6 @@ class AgeEstimatorWindow(QMainWindow):
 
         self.latest_frame: Optional[np.ndarray] = None
         self.latest_face_box: Optional[FaceBox] = None
-        # 이번 측정에서 캡처한 얼굴 스냅샷(결과 미리보기용).
-        # latest_frame은 촬영 종료 직후 재개되는 감지 루프가 덮어쓰므로,
-        # 카운트다운 동안 얼굴이 있는 프레임을 따로 고정해 결과 표시 시점에 사용한다.
         self.captured_frame: Optional[np.ndarray] = None
         self.captured_face_box: Optional[FaceBox] = None
         self.age_histogram_values = [0] * 26
@@ -347,7 +335,7 @@ class AgeEstimatorWindow(QMainWindow):
         self.build_ui()
         self.apply_styles()
         self.enter_state(AppState.IDLE)
-        self.set_face_status("대기", "#94a3b8")
+        self.set_face_status("대기", "#172033")
         self.set_gender("-")
         self.set_age_result("-")
         self.set_gender_confidence("-")
@@ -357,18 +345,14 @@ class AgeEstimatorWindow(QMainWindow):
         self.sync_button_states()
         self.update_responsive_layout(self.width())
 
-    # ====================================================================
-    # UI 구성
-    # ====================================================================
-
     def build_ui(self) -> None:
         root = QWidget()
         root.setObjectName("root")
         self.setCentralWidget(root)
 
         self.main_layout = QBoxLayout(QBoxLayout.LeftToRight, root)
-        self.main_layout.setContentsMargins(18, 18, 18, 18)
-        self.main_layout.setSpacing(18)
+        self.main_layout.setContentsMargins(8, 8, 8, 8)
+        self.main_layout.setSpacing(14)
 
         self.video_card = self.build_video_panel()
         self.side_scroll = self.build_side_panel()
@@ -383,13 +367,13 @@ class AgeEstimatorWindow(QMainWindow):
 
         layout = QVBoxLayout(video_card)
         layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
+        layout.setSpacing(16)
 
         header = QHBoxLayout()
         header.setSpacing(10)
 
         title_box = QVBoxLayout()
-        title_box.setSpacing(2)
+        title_box.setSpacing(3)
 
         title = QLabel("Live Camera")
         title.setObjectName("videoTitle")
@@ -403,7 +387,7 @@ class AgeEstimatorWindow(QMainWindow):
 
         self.live_state_tag = QLabel("대기 중")
         self.live_state_tag.setAlignment(Qt.AlignCenter)
-        self.live_state_tag.setMinimumWidth(110)
+        self.live_state_tag.setMinimumWidth(96)
         self.live_state_tag.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         header.addLayout(title_box, stretch=1)
@@ -491,44 +475,46 @@ class AgeEstimatorWindow(QMainWindow):
         self.preview_face_label = QLabel("측정 전")
         self.preview_face_label.setObjectName("previewFace")
         self.preview_face_label.setAlignment(Qt.AlignCenter)
-        self.preview_face_label.setFixedSize(150, 150)
+        self.preview_face_label.setFixedSize(130, 130)
 
-        preview_info_layout = QVBoxLayout()
-        preview_info_layout.setSpacing(8)
+        preview_info_grid = QGridLayout()
+        preview_info_grid.setHorizontalSpacing(34)
+        preview_info_grid.setVerticalSpacing(10)
+        preview_info_grid.setColumnStretch(0, 1)
+        preview_info_grid.setColumnStretch(1, 1)
 
         self.preview_gender_title = QLabel("성별")
         self.preview_gender_title.setObjectName("previewMetaTitle")
         self.preview_gender_value = QLabel("-")
         self.preview_gender_value.setObjectName("previewMetaValue")
 
-        self.preview_gender_confidence_title = QLabel("성별 확신도")
-        self.preview_gender_confidence_title.setObjectName("previewMetaTitle")
-        self.preview_gender_confidence_value = QLabel("-")
-        self.preview_gender_confidence_value.setObjectName("previewMetaValueSmall")
-
         self.preview_age_title = QLabel("나이")
         self.preview_age_title.setObjectName("previewMetaTitle")
         self.preview_age_value = QLabel("-")
         self.preview_age_value.setObjectName("previewMetaValue")
+
+        self.preview_gender_confidence_title = QLabel("성별 확신도")
+        self.preview_gender_confidence_title.setObjectName("previewMetaTitle")
+        self.preview_gender_confidence_value = QLabel("-")
+        self.preview_gender_confidence_value.setObjectName("previewMetaValueSmall")
 
         self.preview_age_confidence_title = QLabel("나이 확신도")
         self.preview_age_confidence_title.setObjectName("previewMetaTitle")
         self.preview_age_confidence_value = QLabel("-")
         self.preview_age_confidence_value.setObjectName("previewMetaValueSmall")
 
-        preview_info_layout.addWidget(self.preview_gender_title)
-        preview_info_layout.addWidget(self.preview_gender_value)
-        preview_info_layout.addWidget(self.preview_gender_confidence_title)
-        preview_info_layout.addWidget(self.preview_gender_confidence_value)
-        preview_info_layout.addSpacing(6)
-        preview_info_layout.addWidget(self.preview_age_title)
-        preview_info_layout.addWidget(self.preview_age_value)
-        preview_info_layout.addWidget(self.preview_age_confidence_title)
-        preview_info_layout.addWidget(self.preview_age_confidence_value)
-        preview_info_layout.addStretch(1)
+        preview_info_grid.addWidget(self.preview_gender_title, 0, 0)
+        preview_info_grid.addWidget(self.preview_age_title, 0, 1)
+        preview_info_grid.addWidget(self.preview_gender_value, 1, 0)
+        preview_info_grid.addWidget(self.preview_age_value, 1, 1)
+        preview_info_grid.addWidget(self.preview_gender_confidence_title, 2, 0)
+        preview_info_grid.addWidget(self.preview_age_confidence_title, 2, 1)
+        preview_info_grid.addWidget(self.preview_gender_confidence_value, 3, 0)
+        preview_info_grid.addWidget(self.preview_age_confidence_value, 3, 1)
+        preview_info_grid.setRowStretch(4, 1)
 
         preview_body.addWidget(self.preview_face_label, 0)
-        preview_body.addLayout(preview_info_layout, 1)
+        preview_body.addLayout(preview_info_grid, 1)
 
         preview_layout.addWidget(preview_title)
         preview_layout.addLayout(preview_body)
@@ -558,187 +544,202 @@ class AgeEstimatorWindow(QMainWindow):
     def apply_styles(self) -> None:
         self.setStyleSheet(
             """
-            QMainWindow { background-color: #08111f; }
-
-            QWidget#root {
-                background: qlineargradient(
-                    x1: 0, y1: 0, x2: 1, y2: 1,
-                    stop: 0 #07101d,
-                    stop: 0.45 #0b1324,
-                    stop: 1 #08111f
-                );
+            QMainWindow {
+                background-color: #eaf3ff;
             }
 
-            QLabel, QPushButton { font-family: "Pretendard"; }
+            QWidget#root {
+                background-color: #eaf3ff;
+            }
 
-            QFrame#videoCard, QFrame#sidePanel {
-                background-color: #0d1726;
-                border: 1px solid #1f2c40;
-                border-radius: 22px;
+            QLabel, QPushButton {
+                font-family: "Pretendard";
+                color: #172033;
+            }
+
+            QFrame#videoCard,
+            QFrame#sidePanel {
+                background-color: #fbfdff;
+                border: 1px solid #dbe7f5;
+                border-radius: 18px;
             }
 
             QLabel#videoTitle {
-                color: #f8fafc;
+                color: #172033;
                 font-size: 18px;
-                font-weight: 800;
+                font-weight: 900;
             }
 
             QLabel#videoSubtitle {
-                color: #91a4bd;
+                color: #6b7890;
                 font-size: 12px;
+                font-weight: 700;
             }
 
             QLabel#videoSurface {
                 background: qlineargradient(
                     x1: 0, y1: 0, x2: 1, y2: 1,
-                    stop: 0 #0a1320,
-                    stop: 1 #111b2d
+                    stop: 0 #202a38,
+                    stop: 0.55 #303b4b,
+                    stop: 1 #1f2835
                 );
-                border: 1px solid #24344b;
-                border-radius: 18px;
-                color: #7e92ad;
+                border: 1px solid #c9d7e8;
+                border-radius: 14px;
+                color: #9aa8ba;
                 font-size: 22px;
-                font-weight: 700;
+                font-weight: 900;
             }
 
             QLabel#eyebrow {
-                color: #7dd3fc;
+                color: #2563eb;
                 font-size: 11px;
-                font-weight: 800;
-                letter-spacing: 1px;
+                font-weight: 900;
             }
 
             QLabel#panelTitle {
-                color: #f8fafc;
+                color: #172033;
                 font-size: 24px;
-                font-weight: 800;
+                font-weight: 900;
             }
 
             QLabel#helperBox {
-                background-color: #0a1320;
-                border: 1px solid #21314a;
-                border-radius: 14px;
-                color: #dae7f7;
+                background-color: #ffffff;
+                border: 1px solid #d7e3f2;
+                border-radius: 12px;
+                color: #334155;
                 font-size: 12px;
+                font-weight: 700;
                 padding: 12px;
                 min-height: 42px;
             }
 
             QLabel#progressTitle {
-                color: #93a5bf;
+                color: #7a8799;
                 font-size: 11px;
-                font-weight: 800;
+                font-weight: 900;
                 margin-top: 4px;
             }
 
             QProgressBar#captureProgressBar {
-                background-color: #0a1320;
-                border: 1px solid #21314a;
-                border-radius: 10px;
+                background-color: #ffffff;
+                border: 1px solid #d7e3f2;
+                border-radius: 9px;
                 min-height: 18px;
-                color: #f8fafc;
+                color: #172033;
                 text-align: center;
                 font-size: 11px;
-                font-weight: 700;
+                font-weight: 900;
             }
 
             QProgressBar#captureProgressBar::chunk {
-                background-color: #38bdf8;
-                border-radius: 9px;
+                background-color: #2f63f6;
+                border-radius: 8px;
             }
 
             QFrame#metricCard {
-                background-color: #0a1320;
-                border: 1px solid #21314a;
-                border-radius: 16px;
+                background-color: #ffffff;
+                border: 1px solid #d7e3f2;
+                border-radius: 12px;
             }
 
             QLabel#metricTitle {
-                color: #93a5bf;
+                color: #7a8799;
                 font-size: 11px;
-                font-weight: 800;
+                font-weight: 900;
                 min-height: 16px;
             }
 
             QLabel#metricValue {
-                color: #f8fafc;
+                color: #172033;
                 font-size: 22px;
-                font-weight: 700;
+                font-weight: 900;
             }
 
             QPushButton {
-                min-height: 38px;
-                border-radius: 12px;
-                border: none;
+                min-height: 42px;
+                border-radius: 10px;
+                border: 1px solid #d7e3f2;
                 font-size: 13px;
-                font-weight: 700;
+                font-weight: 900;
                 padding: 8px 10px;
+                background-color: #ffffff;
+                color: #64748b;
             }
 
             QPushButton#startButton {
-                background-color: #23344a;
-                color: #f8fafc;
+                background-color: #ffffff;
+                color: #64748b;
             }
 
-            QPushButton#startButton:hover { background-color: #2c425d; }
+            QPushButton#startButton:hover {
+                background-color: #f3f7fc;
+                border-color: #bfd0e5;
+            }
 
             QPushButton#measureButton {
-                background-color: #ea580c;
+                background-color: #2f63f6;
+                border-color: #2f63f6;
                 color: #ffffff;
             }
 
-            QPushButton#measureButton:hover { background-color: #f97316; }
-
-            QPushButton#stopButton {
-                background-color: #334155;
-                color: #e2e8f0;
+            QPushButton#measureButton:hover {
+                background-color: #2454d8;
             }
 
-            QPushButton#stopButton:hover { background-color: #41536a; }
+            QPushButton#stopButton {
+                background-color: #ffffff;
+                color: #64748b;
+            }
+
+            QPushButton#stopButton:hover {
+                background-color: #f3f7fc;
+                border-color: #bfd0e5;
+            }
 
             QPushButton:disabled {
-                background-color: #334155;
-                color: #94a3b8;
+                background-color: #edf3fa;
+                border-color: #e2eaf5;
+                color: #9aa8ba;
             }
 
             QFrame#previewCard {
-                background-color: #091522;
-                border: 1px solid #21314a;
-                border-radius: 18px;
+                background-color: #ffffff;
+                border: 1px solid #d7e3f2;
+                border-radius: 14px;
             }
 
             QLabel#previewTitle {
-                color: #f8fafc;
+                color: #172033;
                 font-size: 14px;
-                font-weight: 800;
+                font-weight: 900;
             }
 
             QLabel#previewFace {
-                background-color: #0a1320;
-                border: 1px solid #24344b;
-                border-radius: 14px;
-                color: #7e92ad;
-                font-size: 14px;
-                font-weight: 700;
+                background-color: #fbfdff;
+                border: 1px solid #d7e3f2;
+                border-radius: 12px;
+                color: #8a98aa;
+                font-size: 13px;
+                font-weight: 900;
             }
 
             QLabel#previewMetaTitle {
-                color: #8ba2bf;
+                color: #7a8799;
                 font-size: 12px;
-                font-weight: 700;
+                font-weight: 900;
             }
 
             QLabel#previewMetaValue {
-                color: #f8fafc;
+                color: #172033;
                 font-size: 24px;
-                font-weight: 800;
+                font-weight: 900;
                 min-height: 28px;
             }
 
             QLabel#previewMetaValueSmall {
-                color: #cbd5e1;
+                color: #2563eb;
                 font-size: 18px;
-                font-weight: 800;
+                font-weight: 900;
                 min-height: 22px;
             }
 
@@ -761,10 +762,6 @@ class AgeEstimatorWindow(QMainWindow):
             self.main_layout.setStretch(1, 4)
             self.video_label.setMinimumHeight(400)
 
-    # ====================================================================
-    # 버튼 → signal (실제 동작은 SystemController가 수행)
-    # ====================================================================
-
     def _emit_start_camera(self) -> None:
         self.start_camera_requested.emit()
 
@@ -774,24 +771,17 @@ class AgeEstimatorWindow(QMainWindow):
     def _emit_stop_camera(self) -> None:
         self.stop_camera_requested.emit()
 
-    # ====================================================================
-    # SystemController → GUI slot (MainThread에서만 위젯 갱신)
-    # ====================================================================
-
     @pyqtSlot(str)
     def on_status_message(self, message: str) -> None:
-        # 상태 메시지를 보조 안내 영역에 표시한다.
         self.helper_label.setText(message)
 
     @pyqtSlot(str)
     def on_state_changed(self, state_name: str) -> None:
         mapped = CONTROLLER_STATE_MAP.get(state_name, AppState.IDLE)
 
-        # IDLE이면서 카메라/얼굴이 준비되었으면 READY 표시
         if mapped == AppState.IDLE and self.camera_running and self.face_ready:
             mapped = AppState.READY
 
-        # 새 측정 시작(카운트다운) 시 이전 결과와 이전 캡처 스냅샷을 정리한다.
         if mapped == AppState.COUNTDOWN:
             self.reset_progress_bar()
             self.clear_preview_panel()
@@ -809,10 +799,10 @@ class AgeEstimatorWindow(QMainWindow):
             self.latest_face_box = None
             self.countdown_value = 0
             self.video_label.clear_frame()
-            self.set_face_status("대기", "#94a3b8")
+            self.set_face_status("대기", "#172033")
             self.reset_progress_bar()
         else:
-            self.set_face_status("검색 중", "#38bdf8")
+            self.set_face_status("검색 중", "#2563eb")
         self.sync_button_states()
 
     @pyqtSlot(bool)
@@ -822,11 +812,11 @@ class AgeEstimatorWindow(QMainWindow):
             return
 
         if ready:
-            self.set_face_status("감지됨", "#22c55e")
+            self.set_face_status("감지됨", "#16a34a")
             if self.state in {AppState.IDLE, AppState.READY}:
                 self.enter_state(AppState.READY)
         else:
-            self.set_face_status("미감지", "#f87171")
+            self.set_face_status("미감지", "#ef4444")
             if self.state in {AppState.IDLE, AppState.READY}:
                 self.enter_state(AppState.IDLE)
         self.sync_button_states()
@@ -854,7 +844,6 @@ class AgeEstimatorWindow(QMainWindow):
 
     @pyqtSlot(object)
     def on_preview_frame(self, payload) -> None:
-        # payload: (frame: np.ndarray(BGR), face_box: Optional[FaceBox])
         try:
             frame, face_box = payload
         except (TypeError, ValueError):
@@ -865,9 +854,6 @@ class AgeEstimatorWindow(QMainWindow):
         self.latest_frame = frame
         self.latest_face_box = face_box
 
-        # 측정이 시작된 뒤(카운트다운/캡처) 얼굴이 있는 마지막 프레임을 결과 미리보기용으로
-        # 고정한다. 캡처 종료 후 재개되는 감지 루프가 latest_frame을 덮어써도, 이 스냅샷은
-        # 이번 측정에서 캡처한 얼굴을 그대로 유지한다.
         if face_box is not None and self.state in {AppState.COUNTDOWN, AppState.COLLECTING}:
             self.captured_frame = frame
             self.captured_face_box = face_box
@@ -892,7 +878,7 @@ class AgeEstimatorWindow(QMainWindow):
         QMessageBox.warning(self, "측정 오류", message)
 
     # ====================================================================
-    # 결과 표시
+    # 결과 표시 — 나이 확신도/성별 로직은 현행(표준편차/contract)을 유지한다.
     # ====================================================================
 
     @staticmethod
@@ -903,7 +889,7 @@ class AgeEstimatorWindow(QMainWindow):
         - stddev 1.57 -> 99%, stddev 8.23 -> 1% (inverse linear, [1, 99] clamp)
         - 유효하지 않은 분포면 None을 반환한다(높은 confidence로 fallback하지 않음).
 
-        실제 계산은 모듈 레벨 pure helper(`age_confidence_percent`)에 위임한다.
+        구버전 첨부 코드의 예측 나이 ±2세 확률 질량 방식은 사용하지 않는다.
         """
         return age_confidence_percent(age_probs)
 
@@ -913,12 +899,9 @@ class AgeEstimatorWindow(QMainWindow):
         return "여성" if gender == 1 else "남성"
 
     def _show_success_result(self, result: dict) -> None:
-        # 이번 측정에서 고정한 캡처 스냅샷으로 얼굴 미리보기를 만든다.
-        # (스냅샷이 없으면 live 프레임으로 폴백)
         frame = self.captured_frame if self.captured_frame is not None else self.latest_frame
-        face_box = (
-            self.captured_face_box if self.captured_face_box is not None else self.latest_face_box
-        )
+        face_box = self.captured_face_box if self.captured_face_box is not None else self.latest_face_box
+
         preview_face = self._make_preview_face(frame, face_box)
         if preview_face is not None:
             self.set_preview_face(preview_face)
@@ -934,8 +917,7 @@ class AgeEstimatorWindow(QMainWindow):
         self.set_gender_confidence(f"{gender_confidence * 100:.1f}%")
 
         # 나이 확신도: 26-bin(15~40세) 분포의 weighted stddev 기반 confidence.
-        # 유효하지 않은 분포면 높은 confidence로 fallback하지 않고 "-"(unavailable)로 표시한다.
-        # invalid 분포(NaN/Inf/비숫자/길이 불일치/합<=0 등)는 confidence뿐 아니라
+        # invalid 분포(NaN/Inf/비숫자/길이 불일치/합<=0)는 confidence뿐 아니라
         # 히스토그램 변환(int(round(p*1000)))에서도 예외를 낼 수 있으므로, 동일한 유효성
         # 판단으로 묶어 처리한다: 유효하면 표시 + 히스토그램, 유효하지 않으면 "-" + 빈 히스토그램.
         age_confidence = self._compute_age_confidence(age_probs)
@@ -945,13 +927,12 @@ class AgeEstimatorWindow(QMainWindow):
             self.age_histogram.clear_values()
         else:
             self.set_age_confidence(f"{age_confidence:.1f}%")
-            # 히스토그램: age_probs(26개)를 정수 스케일로 표시 (위젯이 최대값 기준 정규화)
             histogram_values = [int(round(p * 1000)) for p in age_probs]
             self.age_histogram_values = histogram_values
             self.age_histogram.set_values(histogram_values)
 
         self.helper_label.setText(
-            f"측정 완료 — 유효 프레임 {result.get('valid_count')}개로 분석했습니다."
+            f"측정 완료. 유효 프레임 {result.get('valid_count')}개로 분석했습니다."
         )
 
     def _show_failure_result(self, result: dict) -> None:
@@ -1017,10 +998,6 @@ class AgeEstimatorWindow(QMainWindow):
 
         return int(x1), int(y1), int(x2 - x1), int(y2 - y1)
 
-    # ====================================================================
-    # 미리보기 렌더링 (전달받은 프레임에 overlay만 그린다)
-    # ====================================================================
-
     def render_preview(self, frame: np.ndarray, face_box: Optional[FaceBox]) -> None:
         display_frame = frame.copy()
         self.draw_guide_box(display_frame)
@@ -1028,14 +1005,14 @@ class AgeEstimatorWindow(QMainWindow):
 
         if face_box is not None:
             x, y, w, h = face_box
-            cv2.rectangle(display_frame, (x, y), (x + w, y + h), (36, 210, 146), 3)
+            cv2.rectangle(display_frame, (x, y), (x + w, y + h), (37, 99, 235), 3)
             cv2.putText(
                 display_frame,
                 "FACE DETECTED",
                 (x, max(32, y - 12)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.66,
-                (36, 210, 146),
+                (37, 99, 235),
                 2,
                 cv2.LINE_AA,
             )
@@ -1078,11 +1055,29 @@ class AgeEstimatorWindow(QMainWindow):
     def draw_status_banner(self, frame: np.ndarray) -> None:
         meta = STATE_META[self.state]
 
-        cv2.rectangle(frame, (18, 16), (250, 74), (10, 17, 31), -1)
-        cv2.rectangle(frame, (18, 16), (250, 74), (58, 73, 96), 1)
+        cv2.rectangle(frame, (18, 16), (250, 74), (32, 42, 56), -1)
+        cv2.rectangle(frame, (18, 16), (250, 74), (148, 163, 184), 1)
 
-        cv2.putText(frame, meta.banner, (30, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 255, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, "Ready when you are", (30, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (188, 200, 216), 1, cv2.LINE_AA)
+        cv2.putText(
+            frame,
+            meta.banner,
+            (30, 42),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.72,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            "Ready when you are",
+            (30, 62),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.48,
+            (203, 213, 225),
+            1,
+            cv2.LINE_AA,
+        )
 
     def render_frame(self, frame: np.ndarray) -> None:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -1099,31 +1094,29 @@ class AgeEstimatorWindow(QMainWindow):
 
         self.video_label.set_frame_pixmap(QPixmap.fromImage(image))
 
-    # ====================================================================
-    # 표시 헬퍼
-    # ====================================================================
-
     def enter_state(self, state: AppState, custom_hint: Optional[str] = None) -> None:
         self.state = state
         meta = STATE_META[state]
 
-        self.status_card.set_value(meta.label, meta.color, 19)
+        self.status_card.set_value(meta.label, "#172033", 19)
         if custom_hint is not None:
             self.helper_label.setText(custom_hint)
+        else:
+            self.helper_label.setText(meta.hint)
         self.set_state_tag(meta.label, meta.color)
 
     def set_state_tag(self, text: str, color: str) -> None:
         self.live_state_tag.setText(text)
         self.live_state_tag.setStyleSheet(
-            f"""
-            QLabel {{
-                background-color: {color};
-                color: white;
+            """
+            QLabel {
+                background-color: #edf3fa;
+                color: #64748b;
                 border-radius: 11px;
                 padding: 6px 12px;
                 font-size: 11px;
-                font-weight: 800;
-            }}
+                font-weight: 900;
+            }
             """
         )
 
@@ -1132,35 +1125,43 @@ class AgeEstimatorWindow(QMainWindow):
 
     def set_gender(self, text: str) -> None:
         if text == "남성":
-            color = "#60a5fa"
+            color = "#2563eb"
         elif text == "여성":
-            color = "#f9a8d4"
+            color = "#db2777"
         elif text == "미정":
-            color = "#cbd5e1"
+            color = "#64748b"
         else:
-            color = "#f8fafc"
+            color = "#172033"
 
         self.preview_gender_value.setText(text)
-        self.preview_gender_value.setStyleSheet(f"color: {color}; font-size: 24px; font-weight: 800;")
+        self.preview_gender_value.setStyleSheet(
+            f"color: {color}; font-size: 24px; font-weight: 900;"
+        )
 
     def set_gender_confidence(self, text: str) -> None:
         self.preview_gender_confidence_value.setText(text)
-        self.preview_gender_confidence_value.setStyleSheet("color: #7dd3fc; font-size: 18px; font-weight: 800;")
+        self.preview_gender_confidence_value.setStyleSheet(
+            "color: #2563eb; font-size: 18px; font-weight: 900;"
+        )
 
     def set_age_result(self, text: str) -> None:
         if text == "실패":
-            color = "#f87171"
+            color = "#ef4444"
         elif text == "-":
-            color = "#cbd5e1"
+            color = "#64748b"
         else:
-            color = "#f8d66d"
+            color = "#172033"
 
         self.preview_age_value.setText(text)
-        self.preview_age_value.setStyleSheet(f"color: {color}; font-size: 28px; font-weight: 800;")
+        self.preview_age_value.setStyleSheet(
+            f"color: {color}; font-size: 24px; font-weight: 900;"
+        )
 
     def set_age_confidence(self, text: str) -> None:
         self.preview_age_confidence_value.setText(text)
-        self.preview_age_confidence_value.setStyleSheet("color: #a7f3d0; font-size: 18px; font-weight: 800;")
+        self.preview_age_confidence_value.setStyleSheet(
+            "color: #0f766e; font-size: 18px; font-weight: 900;"
+        )
 
     def clear_preview_panel(self) -> None:
         self.preview_face_label.setPixmap(QPixmap())
@@ -1207,27 +1208,19 @@ class AgeEstimatorWindow(QMainWindow):
 
         self.start_camera_button.setEnabled(not self.camera_running)
         self.stop_button.setEnabled(self.camera_running and not busy)
-        # 측정 버튼은 SystemController의 measure_button_enabled_changed로 제어되지만,
-        # busy/카메라 상태에 따른 즉시 비활성화도 함께 보장한다.
         if busy or not self.camera_running:
             self.measure_button.setEnabled(False)
-
-    # ====================================================================
-    # 윈도우 이벤트
-    # ====================================================================
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self.update_responsive_layout(self.width())
 
     def closeEvent(self, event) -> None:
-        # 종료를 SystemController에 알려 카메라/QThread를 정리하게 한다.
         self.close_requested.emit()
         event.accept()
 
 
 def main() -> None:
-    # 단독 실행 진입점. 정식 진입점은 app.main_app.main() 이다.
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 

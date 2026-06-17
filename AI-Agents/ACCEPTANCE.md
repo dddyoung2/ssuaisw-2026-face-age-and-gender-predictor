@@ -4,89 +4,64 @@
 
 ## Scope
 
-- [ ] 구현자는 이 작업이 "GUI 나이 확신도 표시 공식 변경 + result_processor 성별 집계 기준 확인/필요 시 최소 수정" 범위임을 확인했다.
-- [ ] 이전 모델 연결/반복 측정 PASS 작업을 불필요하게 재구현하지 않았다.
-- [ ] gender confidence 정책은 변경하지 않았다.
+- [ ] 구현자는 이 작업이 "GUI 디자인 변경"에 한정된 작업임을 확인했다.
+- [ ] 첨부된 구버전 `main_window.py`를 코드 전체 교체본이 아니라 디자인 참고 자료로만 사용했다.
+- [ ] 현재 출력/추론/집계 로직을 변경하지 않았다.
+- [ ] 나이 확신도 계산 공식은 현행 표준편차 기반 방식을 유지했다.
+- [ ] 성별 표시 contract와 result_processor 집계 정책을 변경하지 않았다.
+- [ ] GitHub CI에서 실패했던 `average_gender == 0.5` 경계 케이스가 안정적으로 `gender == 1`을 반환한다.
+- [ ] camera/worker/thread/timer/signal-slot 흐름을 변경하지 않았다.
+- [ ] 모델 파일, 모델 학습, 모델 inference 코드를 변경하지 않았다.
+- [ ] 새 기능 추가나 광범위한 구조 변경을 하지 않았다.
+
+## Design Requirements
+
+- [ ] GUI 전체가 밝은 블루/화이트 계열의 일관된 visual style을 갖는다.
+- [ ] 주요 패널/카드/결과 영역은 옅은 border, 적절한 padding, readable한 contrast를 가진다.
+- [ ] primary 버튼과 진행 표시가 light theme에 맞게 정리되어 있다.
+- [ ] 측정 전/측정 중/결과 표시/실패 상태에서 버튼 스타일과 상태가 명확하다.
+- [ ] preview image 또는 camera preview 영역이 깨지거나 찌그러지지 않는다.
+- [ ] result metric card 또는 결과 표시 영역의 텍스트가 겹치지 않는다.
+- [ ] histogram 영역은 배경과 구분되며 현재 값 표시가 읽기 쉽다.
+- [ ] 작은 창 크기에서도 주요 라벨과 버튼 텍스트가 parent 영역 밖으로 넘치지 않는다.
+- [ ] 카드 안에 불필요하게 중첩된 카드 구조를 만들지 않았다.
+
+## Logic Preservation
+
+- [ ] 나이 확신도는 26-bin 나이 분포의 weighted standard deviation 기반으로 계산된다.
+- [ ] 표준편차 `1.57 -> 99%`, `8.23 -> 1%` mapping이 유지된다.
+- [ ] confidence clamp 범위 `[1%, 99%]`가 유지된다.
+- [ ] invalid `age_probs`가 높은 confidence로 fallback하지 않는다.
+- [ ] 첨부 파일의 예전 predicted-age `±2` probability mass 방식이 되살아나지 않았다.
+- [ ] age histogram의 값 생성/validity 처리 정책이 현행 로직과 일치한다.
+- [ ] `gender == 1 -> 여성`, `gender == 0 -> 남성` 표시 contract가 유지된다.
+- [ ] `gender_confidence` 표시 방식과 값 계산이 유지된다.
+- [ ] `result_processor`의 `average_gender >= 0.5 -> 1`, `< 0.5 -> 0` 정책을 변경하지 않았다.
+- [ ] 수학적으로 `average_gender == 0.5`인 입력이 부동소수점 합산 오차 때문에 `0`으로 판정되지 않는다.
+- [ ] 성별 평균 안정화가 필요해 `result_processor.py`를 수정했다면, 정책 변경 없이 numeric stability 최소 수정으로만 처리했다.
 - [ ] 기존 age 평균 집계 방식은 변경하지 않았다.
 - [ ] 유효 prediction 30개 미만 실패 조건은 변경하지 않았다.
-- [ ] 모델 파일, 모델 학습, 모델 weight는 변경하지 않았다.
-- [ ] 광범위한 UI 리디자인을 하지 않았다.
+- [ ] result dict contract를 breaking change하지 않았다.
 
-## Formula
+## Tests / Verification
 
-- [ ] age confidence는 26-bin 나이 분포를 기준으로 계산된다.
-- [ ] 나이 bin은 `15..40` inclusive로 해석된다.
-- [ ] normalized `age_probs`는 검증 후 사용된다.
-- [ ] unnormalized positive weights는 normalize 후 사용된다.
-- [ ] raw logits를 사용해야 하는 경우 softmax 후 사용된다.
-- [ ] weighted mean은 `sum(weight * age)`로 계산된다.
-- [ ] weighted standard deviation은 `sqrt(sum(weight * (age - mean)^2))`로 계산된다.
-- [ ] `STDDEV_BEST = 1.57`이 사용된다.
-- [ ] `STDDEV_WORST = 8.23`이 사용된다.
-- [ ] `CONFIDENCE_BEST = 99.0`이 사용된다.
-- [ ] `CONFIDENCE_WORST = 1.0`이 사용된다.
-- [ ] confidence는 inverse linear mapping으로 계산된다.
-- [ ] valid distribution의 최종 confidence는 `[1.0, 99.0]`로 clamp된다.
-
-## Behavior
-
-- [ ] 기존 predicted-age `±2`세 probability mass 방식은 displayed age confidence에 더 이상 사용되지 않는다.
-- [ ] standard deviation이 `1.57`이면 age confidence가 `99%`로 표시된다.
-- [ ] standard deviation이 `8.23`이면 age confidence가 `1%`로 표시된다.
-- [ ] standard deviation이 `1.57`보다 낮으면 `99%`로 clamp된다.
-- [ ] standard deviation이 `8.23`보다 높으면 `1%`로 clamp된다.
-- [ ] uniform distribution over ages `15..40`은 낮은 confidence를 만든다.
-- [ ] invalid distribution은 높은 confidence를 만들지 않는다.
-- [ ] missing/empty/wrong-length/non-finite/non-normalizable input은 `0%`, `-`, 또는 명확한 unavailable 상태가 된다.
-- [ ] 성공 result 표시 경로에서 새 confidence 값이 사용된다.
-- [ ] GUI percentage 표시 형식은 기존 UI와 일관된다.
-- [ ] age histogram 시각화는 유지된다.
-- [ ] gender confidence 표시는 기존과 동일하다.
-
-## result_processor Gender Aggregation
-
-- [ ] prediction dict의 `gender` 값은 프레임별 성별 예측 점수로 해석된다.
-- [ ] 성별 최종 집계는 유효 prediction만 필터링한 뒤 수행된다.
-- [ ] 유효 prediction들의 `gender` score 평균값이 계산된다.
-- [ ] `average_gender >= 0.5`이면 최종 `gender`는 `1`이다.
-- [ ] `average_gender < 0.5`이면 최종 `gender`는 `0`이다.
-- [ ] `average_gender == 0.5` 경계값은 최종 `gender == 1`로 처리된다.
-- [ ] 앱 내부 label contract는 `gender == 1 -> 여성`, `gender == 0 -> 남성`으로 문서화되어 있다.
-- [ ] `result_processor` 로그 또는 문서가 `1=여성`, `0=남성` 의미와 일치한다.
-- [ ] GUI 결과 표시가 `gender == 1`을 `여성`, `gender == 0`을 `남성`으로 표시한다.
-- [ ] 모델 출력 label 자체가 `1=여성`, `0=남성`인지 코드상 보장되지 않는 경우 `IMPLEMENTATION.md`에 Not Verified 또는 Follow-up으로 기록된다.
-- [ ] 기존 age 평균 집계 방식은 유지된다.
-- [ ] 기존 `gender_confidence` 평균 집계 방식은 유지된다.
-- [ ] 유효 prediction이 30개 미만이면 gender 평균값과 무관하게 실패 result가 반환된다.
-- [ ] prediction/result dict contract는 breaking change되지 않았다.
-- [ ] 문서, 구현, 테스트가 위 성별 집계 기준과 서로 모순되지 않는다.
-
-## Tests
-
-- [ ] age confidence 계산 helper 또는 equivalent path에 대한 단위 테스트가 있다.
-- [ ] stddev `1.57 -> 99%` 테스트가 있다.
-- [ ] stddev `8.23 -> 1%` 테스트가 있다.
-- [ ] stddev lower-bound clamp 테스트가 있다.
-- [ ] stddev upper-bound clamp 테스트가 있다.
-- [ ] uniform 15..40 distribution low-confidence 테스트가 있다.
-- [ ] invalid input이 high confidence를 만들지 않는 테스트가 있다.
-- [ ] 기존 `±2`세 window confidence를 기대하던 테스트가 새 공식 기준으로 갱신되었다.
-- [ ] GUI result 표시 경로가 새 공식 helper를 사용하는지 확인하는 테스트가 있다.
-- [ ] `result_processor`에서 `average_gender >= 0.5 -> gender == 1` 테스트가 있다.
-- [ ] `result_processor`에서 `average_gender < 0.5 -> gender == 0` 테스트가 있다.
-- [ ] `result_processor`에서 `average_gender == 0.5 -> gender == 1` 경계 테스트가 있다.
-- [ ] GUI 표시 또는 관련 테스트에서 `gender == 1 -> 여성`, `gender == 0 -> 남성` contract가 확인된다.
-- [ ] `result_processor`에서 age 평균 집계가 유지되는지 확인하는 테스트가 있다.
-- [ ] `result_processor`에서 `gender_confidence` 평균 집계가 유지되는지 확인하는 테스트가 있다.
-- [ ] `result_processor`에서 유효 prediction 30개 미만 실패 조건이 유지되는지 확인하는 테스트가 있다.
-- [ ] 전체 자동 테스트가 통과한다.
+- [ ] `main_window.py` 문법 검증 또는 import 검증을 수행했다.
+- [ ] 관련 GUI 테스트가 있다면 실행했고 통과했다.
+- [ ] `tests/test_result_processor.py`를 실행했고 GitHub CI 실패 케이스가 통과했다.
+- [ ] 전체 pytest가 가능한 환경이면 실행했고 결과를 기록했다.
+- [ ] 디자인 변경 때문에 기존 테스트를 수정했다면, 구버전 첨부 코드가 아니라 현행 로직 기준으로 수정했다.
+- [ ] 성공 result 표시에서 나이, 성별, 성별 확신도, 나이 확신도, histogram이 표시되는지 확인했다.
+- [ ] 실패 result 표시에서 앱이 멈추지 않고 버튼 상태가 복구되는지 확인했다.
+- [ ] invalid `age_probs` 표시 정책이 깨지지 않았는지 확인했다.
+- [ ] 수동 GUI QA를 수행하지 못했다면 `IMPLEMENTATION.md`의 Not Verified에 기록했다.
 
 ## Documentation
 
 - [ ] `AI-Agents/IMPLEMENTATION.md`에 변경 요약이 기록되었다.
 - [ ] `AI-Agents/IMPLEMENTATION.md`에 변경 파일이 기록되었다.
-- [ ] `AI-Agents/IMPLEMENTATION.md`에 표준편차 공식과 confidence mapping이 기록되었다.
-- [ ] `AI-Agents/IMPLEMENTATION.md`에 result_processor 성별 최종 집계 기준 확인/수정 결과가 기록되었다.
+- [ ] `AI-Agents/IMPLEMENTATION.md`에 첨부 구버전 코드에서 반영한 디자인 요소가 기록되었다.
+- [ ] `AI-Agents/IMPLEMENTATION.md`에 변경하지 않은 로직과 그 이유가 기록되었다.
+- [ ] GitHub CI 실패를 수정했다면 `AI-Agents/IMPLEMENTATION.md`에 원인, 수정 방식, 테스트 결과가 기록되었다.
 - [ ] `AI-Agents/IMPLEMENTATION.md`에 테스트 명령과 결과가 기록되었다.
 - [ ] `AI-Agents/IMPLEMENTATION.md`에 미검증 항목 또는 후속 작업이 기록되었다.
 - [ ] `AI-Agents/REVIEW.md`는 Codex QA 대기 템플릿 상태로 남겨졌다.
@@ -96,6 +71,7 @@
 
 - [ ] `.env`, secret, 개인 이미지, 대용량 모델 파일이 추가/수정되지 않았다.
 - [ ] `models/*.pt`, `models/*.pth`, `models/*.onnx`가 수정/stage 대상이 아니다.
+- [ ] 빌드 산출물, 캐시 산출물, 임시 파일을 커밋 대상으로 만들지 않았다.
 - [ ] Git commit/push/PR을 수행하지 않았다.
 - [ ] 관련 없는 문서나 시스템 파일을 수정하지 않았다.
-- [ ] result dict contract를 breaking change하지 않았다.
+- [ ] `AI-Agents/PR.md`는 구현자가 작성/갱신하지 않았다.

@@ -2,244 +2,195 @@
 
 ## TL;DR
 
-- 목표: GUI의 나이 확신도 표시를 현재 방식에서 "결과 히스토그램/logit 분포의 표준편차 기반 보정 confidence"로 변경한다.
-- 배경 요청: test data 검증을 통해 실효 표준편차 범위 `1.57 ~ 8.23`을 얻었고, 실제 프로그램 실행 시 결과 히스토그램(logit)에서 표준편차를 추출해 `1.57`에 가까우면 `99%`, `8.23`에 가까우면 `1%`로 표시하고 싶다.
-- 범위: 나이 confidence 계산 함수, 결과 표시 경로, `result_processor` 성별 최종 집계 기준 명확화, 필요한 테스트, 구현 보고서 작성.
-- 수정 금지: 모델 파일, 학습 로직, gender confidence, UI 대규모 리디자인, GitHub PR 문서.
-- 이전 작업 상태: 이전 `REVIEW.md` Verdict는 `PASS`이며, 이전 작업 기록은 `AI-Agents/archive/2026-06-18-model-integration-pass/` 아래에 보존되어 있다.
+- 목표: 첨부된 구버전 `main_window.py`의 GUI 디자인 변경 방향을 참고해 현재 GUI 화면의 시각 디자인만 갱신한다.
+- 핵심 제한: 현재 출력/추론/집계 로직은 바꾸지 않는다. 특히 나이 확신도 계산은 현행 표준편차 기반 공식을 유지한다.
+- 첨부 파일 주의: 첨부 코드는 예전 버전이라 나이 확신도 판단 방식이 현재와 다르다. 코드 전체를 복사하지 말고 스타일/레이아웃 참고 자료로만 사용한다.
+- 수정 가능 범위: 원칙적으로 `src/face_age_gender_predictor/app/main_window.py`의 View/UI 스타일 및 레이아웃. 테스트 보강이 필요하면 GUI 표시 테스트만 최소 수정한다.
+- 추가 CI 주의: GitHub Actions에서 `tests/test_result_processor.py::test_age_and_gender_confidence_averages_preserved_with_gender_change`가 float 경계값 문제로 실패한 기록이 있다. 디자인 작업자는 이를 기존 로직 보존 조건의 일부로 확인하고, 필요하면 최소 수정으로 안정화한다.
+- 이전 작업 상태: 이전 `AI-Agents/REVIEW.md` Verdict는 `PASS`이며, 이전 작업 기록은 `AI-Agents/archive/2026-06-18-age-confidence-stddev-pass/` 아래에 보존되어 있다.
 
 ## Goal
 
-현재 GUI의 "나이 확신도"는 모델이 반환한 `age_probs`를 사용하지만, 이전 작업에서는 예측 나이 주변 확률 질량 같은 휴리스틱으로 표시될 수 있었다. 이번 작업의 목표는 이를 명시적인 표준편차 기반 보정 공식으로 교체하는 것이다.
+현재 GUI의 기능과 결과 표시 로직은 유지하면서, 첨부된 구버전 GUI 코드가 보여주는 밝은 블루/화이트 계열의 화면 디자인을 현재 코드에 맞게 반영한다.
 
-사용자가 보는 나이 확신도는 다음 원칙을 따라야 한다.
+이 작업은 **디자인 포팅 작업**이다. 모델 추론 결과, 나이 확신도 계산, 성별 집계, 결과 processor, 버튼 동작, 카메라 흐름, 스레드/타이머 동작을 변경하는 작업이 아니다.
 
-```text
-age distribution이 좁고 표준편차가 1.57에 가까움 -> 높은 확신도, 최대 99%
-age distribution이 넓고 표준편차가 8.23에 가까움 -> 낮은 확신도, 최소 1%
-```
-
-즉, 모델의 나이 histogram/logit/probability 분포가 얼마나 퍼져 있는지를 weighted standard deviation으로 계산하고, 이를 calibrated inverse linear mapping으로 confidence percent에 대응시킨다.
+다만 GitHub Actions에서 이미 확인된 `result_processor` 성별 평균 경계값 테스트 실패는 이번 작업 전/중에 반드시 정리되어야 한다. 이 수정은 정책 변경이 아니라 기존 정책(`average_gender >= 0.5 -> 1`)을 CI 환경에서도 안정적으로 보장하기 위한 최소 안정화로만 허용한다.
 
 ## Previous Task Status
 
-- 이전 `AI-Agents/REVIEW.md` Verdict: `PASS`.
-- 이전 작업의 `TASK.md`, `ACCEPTANCE.md`, `IMPLEMENTATION.md`, `REVIEW.md`, `PR.md`는 archive 아래에 복사해 보존했다.
-- 이번 TASK는 이전 모델 연결/반복 측정 작업을 다시 구현하는 작업이 아니다.
-- 이번 TASK는 나이 확신도 표시 정책을 교체하고, `result_processor`의 성별 최종 집계 기준을 문서/구현/테스트에서 일관되게 명확화하는 좁은 후속 작업이다.
+- 이전 작업 `REVIEW.md` Verdict: `PASS`.
+- 이전 작업 `PR.md`, `REVIEW.md`, `TASK.md`, `ACCEPTANCE.md`, `IMPLEMENTATION.md`는 archive 아래에 보존되었다.
+- 이전 작업에서 확정된 현행 로직은 이번 작업에서 유지해야 한다.
+  - 나이 확신도: 26-bin 나이 분포의 weighted standard deviation 기반 confidence.
+  - invalid `age_probs`: 높은 confidence로 fallback하지 않고 unavailable 상태로 표시.
+  - 성별 표시 contract: 앱 내부 downstream 기준 `gender == 1 -> 여성`, `gender == 0 -> 남성`.
+- `result_processor` 성별 최종 집계: 유효 prediction의 `gender` 평균이 `>= 0.5`이면 `1`, `< 0.5`이면 `0`.
+- GitHub CI에서 `0.1 * 20 + 0.9 * 20`처럼 수학적으로 평균이 `0.5`인 테스트가 부동소수점 합산 오차로 `0` 판정될 수 있음이 확인되었다. 이 경계값 안정성은 유지/보강해야 한다.
 
-## Current Behavior To Replace
+## Background
 
-구현자는 현재 코드에서 실제 사용 중인 나이 확신도 계산 위치를 먼저 확인해야 한다. 후보 위치:
+사용자가 첨부한 파일은 GUI 디자인 변경사항이 들어 있는 구버전 `main_window.py`다. 이 파일은 다음과 같은 시각 방향을 가진다.
 
-- `src/face_age_gender_predictor/app/main_window.py`
-- `AgeEstimatorWindow` 안의 age confidence 계산/표시 함수
-- result slot에서 `age_probs` 또는 histogram 값을 받아 preview/result label에 표시하는 경로
+- 밝은 블루/화이트 계열 배경.
+- 카드형 섹션과 옅은 border.
+- 파란색 primary 버튼/진행 표시.
+- 더 compact한 측정/결과 패널.
+- 얼굴 preview 영역, 결과 metric 카드, histogram 영역의 시각 정리.
+- 결과 상세 정보의 2-column grid 느낌.
+- light theme에 맞춘 histogram bar 색상과 result card 스타일.
 
-이전 작업 기록에는 `AgeEstimatorWindow._compute_age_confidence()`가 예측 나이 `±2`세 구간의 probability mass를 합산하는 방식으로 언급되어 있다. 이번 작업에서는 이 방식이 남아 있다면 제거하거나 더 이상 사용하지 않도록 해야 한다.
+단, 첨부 파일은 현재 코드보다 오래된 버전이라 현재 프로젝트의 나이 확신도 정책과 다르다. 첨부 파일에 있는 예측 나이 주변 확률 질량 방식, 예전 result 표시 흐름, 예전 helper signature를 현재 코드에 그대로 가져오면 안 된다.
 
-## Required Formula
+## Required Implementation
 
-### 입력 분포
+### 1. 디자인만 반영
 
-나이 분포는 26개 bin이어야 하며, 나이는 `15`부터 `40`까지 inclusive다.
+구현자는 현재 `src/face_age_gender_predictor/app/main_window.py`를 먼저 읽고, 현행 함수 구조와 결과 표시 흐름을 기준으로 첨부 파일의 디자인 요소만 선별 반영한다.
 
-```python
-ages = [15, 16, 17, ..., 40]
-```
+반영 가능한 예:
 
-입력으로 사용할 수 있는 값:
+- window/background 색상.
+- QLabel/QFrame/QPushButton/QProgressBar/QGroupBox 등 widget style sheet.
+- 카드/패널 border, radius, padding, spacing.
+- preview image frame 크기와 alignment.
+- result metric card의 시각 배치.
+- histogram widget의 색상, 높이, 여백, label 표시 방식.
+- 측정 진행률과 버튼 상태의 visual style.
+- 텍스트 크기, weight, color 같은 presentation 속성.
+- 레이아웃 spacing/margin 조정.
 
-- normalized `age_probs`: 합이 1에 가까운 probability list
-- unnormalized probability-like weights: 합이 0보다 크면 normalize해서 사용 가능
-- raw logits: 명확히 logit으로 전달되는 값이면 softmax로 probability 변환 후 사용
+반영하면 안 되는 예:
 
-구현자는 현재 result dict에서 전달되는 필드가 `age_probs`인지, raw logits인지 먼저 확인한다. 현재 문서 기준 prediction/result dict는 `age_probs`를 사용한다.
+- 나이 확신도 계산 공식 변경.
+- `age_probs` 해석 방식 변경.
+- histogram 값 생성 로직 변경.
+- result dict contract 변경.
+- 성별 label mapping 변경.
+- 성별 집계 threshold 변경.
+- camera/worker/thread/timer/signal-slot 흐름 변경.
+- `result_processor.py`의 집계 로직 변경.
+- 모델 inference 코드 변경.
 
-### 표준편차 계산
+### 2. 현재 나이 확신도 로직 유지
 
-분포를 normalize한 뒤 weighted mean과 weighted standard deviation을 계산한다.
+현재 GUI는 이전 작업에서 표준편차 기반 나이 확신도 공식을 갖도록 정리되었다. 이번 디자인 작업 후에도 다음이 유지되어야 한다.
+
+- age bin은 `15..40` inclusive, 총 26개 class로 해석한다.
+- 26-bin 나이 분포의 weighted standard deviation을 계산한다.
+- 표준편차 `1.57 -> 99%`, `8.23 -> 1%` inverse linear mapping을 유지한다.
+- valid confidence는 `[1%, 99%]` 범위로 clamp한다.
+- invalid `age_probs`는 높은 confidence로 fallback하지 않는다.
+- invalid `age_probs` 표시 정책은 현행처럼 unavailable/`-` 계열로 유지한다.
+- 히스토그램이 valid distribution일 때만 안전하게 표시되어야 한다.
+
+첨부 파일에 `_compute_age_confidence(age_probs, predicted_age)`처럼 예측 나이 주변 확률을 합산하는 방식이 있더라도, 이 방식은 이번 작업에서 사용하지 않는다.
+
+### 3. 현재 성별/결과 로직 유지
+
+이번 작업은 성별 로직을 바꾸지 않는다.
+
+- GUI 표시 contract는 `gender == 1 -> 여성`, `gender == 0 -> 남성`을 유지한다.
+- `gender_confidence` 표시/평균 정책은 변경하지 않는다.
+- `result_processor`의 최종 성별 집계 방식은 변경하지 않는다.
+- 유효 prediction 30개 미만 실패 조건은 변경하지 않는다.
+- age 평균 집계 방식은 변경하지 않는다.
+
+만약 디자인 포팅 과정에서 result label을 다시 작성해야 한다면, 표시 텍스트의 시각 스타일만 바꾸고 값 계산/분기 조건은 현행 코드를 그대로 유지한다.
+
+### 3-1. GitHub CI 성별 threshold 경계값 안정화
+
+GitHub Actions 실패 사례:
 
 ```text
-weights = normalized probabilities over ages 15..40
-mean = sum(weights[i] * ages[i])
-stddev = sqrt(sum(weights[i] * (ages[i] - mean)^2))
+FAILED tests/test_result_processor.py::test_age_and_gender_confidence_averages_preserved_with_gender_change
+assert result["gender"] == 1
+실제 result["gender"] == 0
+로그상 avg_gender는 0.500으로 보이나, 내부 float 값이 0.5보다 미세하게 작아진 것으로 추정
 ```
 
-### confidence mapping
+요구사항:
 
-아래 상수를 사용한다.
+- `average_gender >= 0.5 -> gender == 1` 정책을 변경하지 않는다.
+- 수학적으로 평균이 `0.5`인 입력은 CI 환경에서도 안정적으로 `gender == 1`이 되어야 한다.
+- 가능한 최소 수정은 `result_processor.py`에서 `gender` 평균 계산을 `math.fsum` 기반으로 안정화하는 것이다.
+- 필요하면 `avg_age`, `avg_gender_confidence`도 동일하게 `math.fsum`으로 계산해 평균 집계 안정성을 높일 수 있다.
+- 이 변경은 성별 정책 변경이 아니라 기존 정책의 numeric stability fix로 기록한다.
+- 테스트를 policy와 분리해 더 안정적으로 만들 수도 있지만, `average_gender == 0.5` 경계 테스트는 반드시 유지한다.
+- 이 CI fix를 수행할 경우 `AI-Agents/IMPLEMENTATION.md`에 원인, 수정 방식, GitHub CI 실패 재현/해결 기준을 기록한다.
 
-```text
-STDDEV_BEST = 1.57
-STDDEV_WORST = 8.23
-CONFIDENCE_BEST = 99.0
-CONFIDENCE_WORST = 1.0
-```
+### 4. Layout / UX Requirements
 
-표준편차가 낮을수록 confidence가 높다.
+구현자는 첨부 디자인의 방향을 현재 앱에 맞게 적용하되, 다음 UX 조건을 지킨다.
 
-```text
-ratio = (stddev - STDDEV_BEST) / (STDDEV_WORST - STDDEV_BEST)
-confidence = CONFIDENCE_BEST - ratio * (CONFIDENCE_BEST - CONFIDENCE_WORST)
-```
+- 앱 실행 직후 화면에서 주요 영역이 겹치지 않아야 한다.
+- 버튼 텍스트, 결과 텍스트, progress 텍스트가 parent 영역 밖으로 넘치지 않아야 한다.
+- 카메라 preview 또는 얼굴 preview 영역의 비율이 깨지지 않아야 한다.
+- 측정 전/측정 중/성공/실패 상태에서 버튼 enable/disable 상태가 기존과 동일해야 한다.
+- 실패 메시지가 표시되어도 앱이 멈추지 않고 다시 측정 가능한 상태로 돌아와야 한다.
+- histogram이 너무 어둡거나 배경과 구분되지 않는 상태가 아니어야 한다.
+- 작은 창 크기에서도 주요 결과 값이 겹치지 않아야 한다.
 
-최종 confidence는 valid distribution에 대해 `[1.0, 99.0]`로 clamp한다.
+### 5. Tests / Verification
 
-```text
-stddev <= 1.57 -> 99%
-stddev >= 8.23 -> 1%
-```
+자동 테스트가 이미 GUI helper와 표시 로직을 확인한다면, 디자인 변경 때문에 깨진 테스트만 현재 로직 기준으로 갱신한다.
 
-### invalid input policy
+필요 시 다음 검증을 수행한다.
 
-다음 입력은 높은 confidence를 만들면 안 된다.
+- `python -m py_compile`로 `main_window.py` 문법 확인.
+- 관련 GUI 테스트가 있다면 `tests/test_main_window.py` 실행.
+- GitHub CI 실패가 있었던 `tests/test_result_processor.py`를 실행한다.
+- 전체 pytest가 과하지 않으면 전체 테스트 실행.
+- GUI 실행이 가능한 환경이면 수동 smoke로 화면 겹침, 버튼 상태, 성공/실패 결과 표시 확인.
 
-- `None`
-- empty list
-- 길이가 26이 아닌 list
-- 숫자가 아닌 값 포함
-- NaN/Inf 포함
-- normalize할 수 없는 분포
-- 합이 0 이하인 weight 분포
-
-이 경우 GUI에는 `0.0%`, `-`, 또는 명확한 unavailable 상태를 표시한다. 기존 UI 관례에 맞추되, 절대 99% 같은 높은 confidence로 fallback하지 않는다.
-
-## Requirements
-
-### 1. Age Confidence 계산 정책 변경
-
-- 예측 나이 `±2`세 probability mass 방식은 더 이상 displayed age confidence에 사용하지 않는다.
-- displayed age confidence는 26-bin 나이 분포의 weighted standard deviation으로 계산한다.
-- `age_probs`가 이미 normalized probability면 검증 후 사용한다.
-- `age_probs`가 unnormalized weight면 합이 0보다 클 때 normalize한다.
-- raw logits를 별도 필드로 사용하게 된다면 softmax 후 사용한다. 단, 현재 result contract를 임의로 바꾸지 않는다.
-- age bin은 반드시 `15..40`의 26개 class로 해석한다.
-- standard deviation `1.57`은 `99%`로 매핑한다.
-- standard deviation `8.23`은 `1%`로 매핑한다.
-- calibrated range 밖의 valid distribution은 `[1%, 99%]`로 clamp한다.
-- invalid distribution은 high confidence가 아닌 unavailable/0% 계열로 표시한다.
-- gender confidence 계산과 표시는 변경하지 않는다.
-- 나이 히스토그램 시각화 자체는 유지한다.
-
-### 2. result_processor 성별 최종 집계 기준 명확화
-
-현재 prediction dict의 `gender` 값은 프레임별 성별 예측 점수로 사용한다. 구현자는 `src/face_age_gender_predictor/processing/result_processor.py`와 관련 테스트/문서가 아래 기준과 일치하는지 확인하고, 다르면 최소 수정한다.
-
-현재 코드 검토 기준:
-
-- `src/face_age_gender_predictor/processing/result_processor.py`의 출력 로그는 `final_gender == 1`을 `여성(1)`, `final_gender == 0`을 `남성(0)`으로 표시한다.
-- `src/face_age_gender_predictor/app/main_window.py`의 GUI 결과 표시도 `gender == 1`이면 `"여성"`, 그 외 `0`이면 `"남성"`으로 표시한다.
-- 따라서 현재 앱의 downstream label contract는 `gender == 1 -> 여성`, `gender == 0 -> 남성`이다.
-- 다만 `src/face_age_gender_predictor/inference/CNNmodel.py`는 모델의 `predicted_gender` 출력을 그대로 prediction dict의 `gender` float으로 전달한다. 모델 자체가 실제로 `1=여성`, `0=남성` label로 학습/출력하는지는 코드만으로 완전히 보장되지 않는다.
-- 구현자는 이번 task에서 앱 내부 문서/테스트/표시 로직이 `1=여성`, `0=남성` contract와 일관되는지 확인하고, 모델 label contract가 불확실하면 `AI-Agents/IMPLEMENTATION.md`의 Not Verified 또는 Follow-up에 기록한다.
-
-- 유효 prediction만 필터링한 뒤 집계한다.
-- 기존 age 평균 집계 방식은 유지한다.
-- 기존 `gender_confidence` 평균 집계 방식은 유지한다.
-- 유효 prediction이 30개 미만이면 실패 처리하는 기존 조건은 유지한다.
-- 최종 gender는 유효 prediction들의 `gender` score 평균값으로 결정한다.
-- `average_gender >= 0.5`이면 최종 `gender`는 `1`, 즉 `여성`이다.
-- `average_gender < 0.5`이면 최종 `gender`는 `0`, 즉 `남성`이다.
-- `gender` score가 누락되었거나 유효하지 않은 prediction은 기존 유효 prediction 필터링 정책과 일관되게 처리한다.
-- 이 기준은 `TASK.md`, `ACCEPTANCE.md`, `IMPLEMENTATION.md`, 테스트 코드, 필요한 경우 `docs/SPEC.md` 또는 관련 문서에서 서로 모순되지 않아야 한다.
-- 관련 테스트가 없으면 추가하고, 이미 있으면 threshold 경계값을 포함하도록 보강한다.
-
-테스트에서 확인할 핵심 케이스:
-
-- 모든 유효 prediction의 평균 `gender`가 `0.5` 이상이면 최종 `gender == 1`.
-- 평균 `gender`가 `0.5` 미만이면 최종 `gender == 0`.
-- 평균이 정확히 `0.5`이면 최종 `gender == 1`.
-- GUI 표시 경로는 `gender == 1`을 `여성`, `gender == 0`을 `남성`으로 표시한다.
-- `age` 평균 집계 결과는 기존 방식과 동일하게 유지된다.
-- `gender_confidence` 평균 집계 결과는 기존 방식과 동일하게 유지된다.
-- 유효 prediction이 30개 미만이면 성별 threshold와 무관하게 실패 result가 유지된다.
-
-### 3. 코드 위치와 구조
-
-- 가능하면 나이 confidence 계산을 작은 pure helper 함수로 분리한다.
-- helper는 GUI 상태에 강하게 의존하지 않아야 하며 테스트하기 쉬워야 한다.
-- 이미 `AgeEstimatorWindow._compute_age_confidence()` 같은 함수가 있다면, 그 함수 내부를 새 공식으로 교체해도 된다.
-- result dict contract를 넓히지 않아도 구현 가능한 경우 나이 confidence 때문에 `result_processor.py`를 수정하지 않는다.
-- 다만 성별 최종 집계 기준이 위 요구사항과 다르다면 `result_processor.py`를 수정 대상에 포함한다.
-- raw logit 지원이 꼭 필요하다고 판단되는 경우에도 기존 `age_probs` contract를 깨지 말고 최소 변경만 한다.
-
-### 4. GUI 표시
-
-- 성공 result 표시 시 새 confidence 값이 사용되어야 한다.
-- 표시 포맷은 기존 UI와 맞춰 percentage로 유지한다.
-- 예: `87.32%`, `99.00%`, `1.00%` 등 기존 표시 자릿수와 조화를 맞춘다.
-- invalid input이면 기존 UI 관례에 맞춰 `-`, `0.00%`, 또는 실패 메시지를 표시한다.
-- age histogram bar rendering은 기존대로 유지한다.
-
-### 5. Tests
-
-다음 테스트를 추가하거나 기존 테스트를 갱신한다.
-
-- stddev `1.57`에 해당하는 분포가 `99%`로 매핑된다.
-- stddev `8.23`에 해당하는 분포가 `1%`로 매핑된다.
-- stddev가 `1.57`보다 작으면 `99%`로 clamp된다.
-- stddev가 `8.23`보다 크면 `1%`로 clamp된다.
-- uniform distribution over ages `15..40`은 낮은 confidence를 만든다.
-- invalid input은 높은 confidence를 만들지 않는다.
-- 기존 `±2`세 probability mass 방식에 의존하는 테스트가 있다면 제거하거나 새 공식 기준으로 다시 작성한다.
-- GUI result slot 또는 helper를 통해 실제 표시 경로가 새 계산을 사용하는지 확인한다.
-- `result_processor`에서 유효 prediction의 `gender` 평균이 `0.5` 이상이면 최종 `gender`가 `1`이 되는지 확인한다.
-- `result_processor`에서 유효 prediction의 `gender` 평균이 `0.5` 미만이면 최종 `gender`가 `0`이 되는지 확인한다.
-- `result_processor`에서 평균 `gender == 0.5` 경계값이 최종 `gender == 1`로 처리되는지 확인한다.
-- GUI 표시 테스트 또는 코드 검토로 `gender == 1 -> 여성`, `gender == 0 -> 남성` contract가 유지되는지 확인한다.
-- 성별 집계 변경 후에도 age 평균, `gender_confidence` 평균, 유효 prediction 30개 미만 실패 조건이 유지되는지 확인한다.
-
-테스트 데이터 생성 팁:
-
-- 정확히 원하는 stddev를 가진 분포를 만들기 어렵다면, helper 함수 레벨에서는 standard deviation을 confidence로 변환하는 작은 함수도 분리해 endpoint mapping을 직접 테스트할 수 있다.
-- distribution -> stddev 계산 테스트와 stddev -> confidence mapping 테스트를 나누면 테스트가 더 안정적이다.
+테스트를 추가/수정할 때도 로직 기대값은 현행 표준편차 기반 나이 확신도와 현행 성별 contract를 기준으로 한다. 첨부 파일의 구버전 기대값을 테스트에 넣지 않는다.
 
 ## Target Files
 
 수정 가능 파일:
 
 - `src/face_age_gender_predictor/app/main_window.py`
-- `src/face_age_gender_predictor/processing/result_processor.py`
-- `tests/test_main_window.py`
-- `tests/test_result_processor.py`
-- 필요 시 `tests/conftest.py`
+- `tests/test_main_window.py` 또는 기존 GUI 표시 테스트 파일, 필요한 경우에 한함
+- `src/face_age_gender_predictor/processing/result_processor.py`는 원칙적으로 수정 금지이나, GitHub CI의 `average_gender == 0.5` float 경계 실패를 해결하기 위한 numeric stability 최소 수정은 허용
+- `tests/test_result_processor.py`는 위 CI 실패 검증/보강이 필요한 경우에 한해 최소 수정 가능
 - `AI-Agents/IMPLEMENTATION.md`
 
-읽기/참조 권장 파일:
+읽기/참조 가능 파일:
 
-- `docs/SPEC.md`
-- `docs/components.md`
-- `src/face_age_gender_predictor/inference/CNNmodel.py`
+- 첨부된 구버전 GUI 코드
+- `src/face_age_gender_predictor/processing/result_processor.py`
+- `tests/test_result_processor.py`
+- `docs/spec.md` 또는 `docs/SPEC.md`, 존재하는 경우 관련 GUI/결과 표시 섹션
+- `docs/development.md`
 
 수정하지 말 것:
 
+- `src/face_age_gender_predictor/processing/result_processor.py`의 정책/구조 변경
+- `src/face_age_gender_predictor/inference/*`
+- 모델 파일과 학습 코드
 - `.env`, `.env.*`
 - `models/*.pt`, `models/*.pth`, `models/*.onnx`
-- 개인 이미지 또는 대용량 산출물
+- 개인 이미지, 대용량 산출물, build/cache 산출물
 - GitHub PR 본문
 - `AI-Agents/PR.md` (Codex Release 담당이 따로 작성)
-- 모델 학습 코드 또는 모델 weight
-- gender confidence 정책
-- 광범위한 UI 리디자인
 
 ## Out of Scope
 
-- 모델 재학습
-- 모델 output shape 변경
-- gender confidence 변경
-- age 평균 집계 방식 변경
-- 유효 prediction 30개 미만 실패 조건 변경
-- age class 범위 변경
-- result dict의 breaking change
-- 실제 웹캠 end-to-end QA 수행
-- Git commit, push, PR 생성
+- 나이 확신도 공식 재설계.
+- 성별 confidence 또는 성별 집계 변경.
+- 모델 inference output contract 변경.
+- `result_processor` 구조 변경.
+- `result_processor` 성별 threshold 정책 변경. 단, `average_gender >= 0.5 -> 1`을 안정적으로 보장하기 위한 float 합산 안정화는 허용.
+- QThread/카메라 pipeline 변경.
+- 새 기능 추가.
+- 실제 모델 성능 평가.
+- Git commit, push, PR 생성.
 
 ## Notes For Claude Code
 
-- 이 task는 좁은 수식 교체 작업이다. 이전 모델 연결/반복 측정 PASS 작업을 다시 건드리지 말라.
-- 구현 전 현재 age confidence 계산 경로를 먼저 찾아라.
-- 변경은 계산 helper, 표시 연결, 테스트에 집중하라.
-- `result_processor`를 건드릴 경우 성별 최종 threshold만 명확히 하고, age 평균/gender_confidence 평균/30개 미만 실패 조건은 유지하라.
-- 확률 분포가 invalid일 때 high confidence로 fallback하지 않는 것이 핵심 방어 조건이다.
-- 완료 후 `AI-Agents/IMPLEMENTATION.md`에 변경 파일, 공식, 테스트 결과, 남은 미검증 사항을 기록하라.
+- 첨부 파일은 "디자인 참고 자료"이지 "교체할 정답 코드"가 아니다.
+- 현재 `main_window.py`의 로직을 기준으로, 스타일/레이아웃만 필요한 만큼 이식하라.
+- 특히 `_compute_age_confidence` 또는 age confidence 관련 helper를 구버전 코드로 되돌리지 말라.
+- 구현 후 `AI-Agents/IMPLEMENTATION.md`에 어떤 디자인 요소를 반영했는지, 어떤 로직을 의도적으로 유지했는지, 실행한 테스트와 미검증 항목을 기록하라.
+- GitHub CI에서 실패한 `test_age_and_gender_confidence_averages_preserved_with_gender_change`를 반드시 확인하라. 실패 원인은 디자인이 아니라 float 경계값 안정성 문제이며, 정책 변경 없이 최소 수정으로 해결하라.
+- 코드 변경 전에 현재 테스트가 어떤 로직을 보호하는지 확인하고, 디자인 변경으로 인한 테스트 수정은 최소화하라.

@@ -2,90 +2,59 @@
 
 ## Verdict: PASS
 
-Claude의 QA Fix 이후 나이 확신도 수식 변경, invalid `age_probs` 방어, result_processor 성별 집계 기준 확인/테스트가 TASK.md와 ACCEPTANCE.md 요구사항을 만족한다. 자동 테스트와 추가 smoke도 통과했다.
+GUI 디자인 변경과 `result_processor` 성별 평균 경계값 안정화가 TASK.md / ACCEPTANCE.md의 범위를 만족한다. 변경은 light theme 중심의 View 표현 변경과 `math.fsum` 기반 numeric stability fix로 제한되어 있으며, 나이 확신도 공식, invalid `age_probs` 방어, 성별 표시 contract, result dict contract는 유지된다.
 
-현재 diff에는 `.gitignore`, `CLAUDE.md`, `AI-Agents/PR.md` 변경이 남아 있으나, 사용자 확인에 따라 `.gitignore`와 `CLAUDE.md`는 사용자 의도 변경이며, `AI-Agents/PR.md`는 이후 별도 release/PR 담당 단계에서 다시 작성될 파일로 분리한다. 따라서 이 세 파일은 이번 구현 코드 품질의 blocker로 보지 않는다.
+pytest는 현재 로컬 `.venv`의 Python 경로가 깨져 실행하지 못했다. 대신 사용 가능한 Codex 번들 Python으로 문법 검증과 `result_processor` 경계 smoke를 수행했다.
+
+## Summary
+
+- `main_window.py`는 밝은 블루/화이트 계열의 GUI 스타일, 카드/버튼/progress/histogram/결과 grid 중심으로 재정리되었다.
+- 첨부 구버전 코드의 예전 나이 확신도 방식은 되살아나지 않았다.
+- `result_processor.py`는 `sum` 대신 `math.fsum`으로 평균 계산을 안정화했다.
+- 성별 정책은 `average_gender >= 0.5 -> 1`, `< 0.5 -> 0` 그대로 유지된다.
 
 ## Findings
 
-- Blocking implementation defect는 발견하지 못했다.
-- 이전 QA의 invalid `age_probs` GUI 표시 예외는 해결되었다.
-  - NaN/Inf/비숫자/음수/wrong length/합 0 입력은 나이 확신도 `-`와 빈 히스토그램으로 안전하게 처리된다.
-  - 추가 smoke 결과: `nan_age_probs_display_ok=True`, `age_conf_text=-`, `histogram_empty=True`.
-- `AI-Agents/PR.md`에는 trailing whitespace가 남아 있어 전체 `git diff --check`는 실패한다. 다만 PR 문서는 별도 release/PR 담당 단계에서 다시 작성될 예정이므로 이번 구현 PASS의 blocker로 보지 않는다.
-- `.gitignore`와 `CLAUDE.md` 변경은 사용자 의도 변경으로 확인되어 이번 구현 scope 문제로 보지 않는다.
-
-## Requirement Coverage
-
-| Requirement | Status | Notes |
-| --- | --- | --- |
-| age confidence uses weighted stddev | PASS | 26-bin weighted stddev helper 확인. |
-| age bins are 15..40 inclusive | PASS | `AGE_CONF_BIN_COUNT = 26`, `AGE_CONF_AGE_MIN = 15`. |
-| stddev 1.57 maps to 99% | PASS | helper/test 확인. |
-| stddev 8.23 maps to 1% | PASS | helper/test 확인. |
-| clamp behavior | PASS | lower/upper clamp 테스트 존재. |
-| unnormalized positive weights normalize | PASS | helper/test 확인. |
-| invalid input avoids high confidence | PASS | helper는 `None`, GUI는 `-` + 빈 히스토그램 처리. |
-| old ±2 year heuristic removed | PASS | displayed confidence path는 stddev helper로 교체됨. |
-| gender confidence unchanged | PASS | 표시/집계 정책 변경 없음. |
-| age histogram visualization retained | PASS | valid 분포는 기존 히스토그램 표시 유지, invalid는 빈 히스토그램. |
-| GUI display path updated | PASS | `_show_success_result()`가 새 helper를 사용한다. |
-| result_processor average_gender >= 0.5 -> gender 1 | PASS | 기존 구현과 테스트 일치. |
-| result_processor average_gender < 0.5 -> gender 0 | PASS | 테스트 보강됨. |
-| average_gender == 0.5 -> gender 1 | PASS | 경계 테스트 보강됨. |
-| gender 1 displays as 여성 | PASS | `_gender_label(1) == "여성"`. |
-| gender 0 displays as 남성 | PASS | `_gender_label(0) == "남성"`. |
-| age average unchanged | PASS | `result_processor.py` 미수정, 테스트 확인. |
-| gender_confidence average unchanged | PASS | 테스트 확인. |
-| valid_count < 30 failure unchanged | PASS | 테스트 확인. |
-| model output label contract documented or marked Not Verified | PASS | `IMPLEMENTATION.md`에 Not Verified 기록. |
-| tests updated/passing | PASS | 전체 76개, 대상 47개 통과. |
-| forbidden/out-of-scope files | PASS WITH NOTE | `.gitignore`/`CLAUDE.md`는 사용자 의도 변경, `PR.md`는 별도 release 단계 파일로 분리. |
+- Blocking finding 없음.
+- `main_window.py` diff는 주로 stylesheet, layout spacing, preview/result grid, histogram paint 색상 변경이다.
+- `result_processor.py` 변경은 평균 계산 안정화를 위한 최소 변경으로 보이며, threshold 정책 변경은 확인되지 않았다.
+- `AI-Agents/PR.md`는 Release 담당 작성 대상이므로 이번 단계에서 새 PR 내용으로 갱신한다.
 
 ## Test Results
 
 ```text
-명령: .\.venv\Scripts\python.exe -m pytest -q --basetemp "C:\Users\Public\Documents\ESTsoft\CreatorTemp\pytest-age-confidence-qa2"
-결과: PASS - 76 passed, 1 warning in 0.24s
-비고: pytest cache path 생성 권한 warning 발생
-
-명령: .\.venv\Scripts\python.exe -m pytest tests\test_main_window.py tests\test_result_processor.py -q --basetemp "C:\Users\Public\Documents\ESTsoft\CreatorTemp\pytest-age-confidence-qa2-target"
-결과: PASS - 47 passed, 1 warning in 0.16s
-비고: pytest cache path 생성 권한 warning 발생
+명령: .\.venv\Scripts\python.exe -m pytest -q --basetemp ".pytest_tmp_release"
+결과: BLOCKED - venv python launcher가 삭제/이동된 Python 경로를 참조해 실행 실패
+오류: Unable to create process using '"C:\Users\jads7\AppData\Local\Programs\Python\Python311\python.exe" -m pytest ...'
 
 명령: .\.venv\Scripts\python.exe -m py_compile src\face_age_gender_predictor\app\main_window.py src\face_age_gender_predictor\processing\result_processor.py
+결과: BLOCKED - 동일한 venv python 경로 문제로 실행 실패
+
+명령: C:\Users\jads7\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m py_compile src\face_age_gender_predictor\app\main_window.py src\face_age_gender_predictor\processing\result_processor.py
 결과: PASS
 
-명령: invalid NaN age_probs GUI display smoke
-결과: PASS - nan_age_probs_display_ok=True, age_conf_text=-, histogram_empty=True
-
-명령: git diff --check -- src\face_age_gender_predictor\app\main_window.py tests\test_main_window.py tests\test_result_processor.py AI-Agents\IMPLEMENTATION.md AI-Agents\REVIEW.md
-결과: PASS
+명령: Codex 번들 Python + PYTHONPATH=src로 result_processor average_gender == 0.5 smoke
+결과: PASS - success=True, gender=1, valid_count=40, age=25.0, gender_confidence=0.8
 
 명령: git diff --check
-결과: FAIL - AI-Agents/PR.md trailing whitespace
-판정: PR.md는 별도 release/PR 담당 단계에서 다시 작성될 파일이므로 이번 구현 QA blocker로 보지 않음.
+결과: PASS
 ```
 
 ## Not Verified
 
-- 실제 웹캠 GUI end-to-end 수동 QA는 수행하지 않았다. 사용자가 커밋 후 pull해서 실제 환경에서 진행할 영역이다.
-- 실제 모델 파일 연결/모델 label 의미 검증은 이번 task 범위가 아니다.
-- 모델의 실제 학습 label이 `gender == 1 -> 여성`, `gender == 0 -> 남성`인지 코드는 보장하지 않는다. 앱 내부 downstream contract만 확인했다.
-- age confidence 표시 자릿수는 현재 `.1f%`다. TASK 예시는 `99.00%` 계열이지만 기존 gender confidence 표시와의 일관성을 우선했다.
+- 전체 pytest는 로컬 `.venv` 실행 경로 문제와 번들 Python의 pytest 미설치로 실행하지 못했다.
+- 실제 데스크톱 GUI 육안 QA, 웹캠 end-to-end QA, 다양한 DPI/해상도 레이아웃 검증은 수행하지 못했다.
+- 실제 모델 학습 label이 `gender == 1 -> 여성`, `gender == 0 -> 남성`인지 코드는 완전히 보장하지 않는다. 앱 내부 downstream contract만 확인했다.
 
 ## Security / Privacy Check
 
-- [x] `.env`, `.env.local`, secret 파일은 tracked 변경 목록에 없다.
-- [x] `models/`는 ignored 상태이며 tracked 모델 파일은 없다.
-- [x] `*.pt`, `*.pth`, `*.onnx` tracked 파일은 없다.
-- [x] 개인 이미지 또는 개인정보 파일 변경은 확인되지 않았다.
-- [x] Git commit/push/PR 생성은 수행되지 않았다.
-- [x] `.gitignore` 변경은 사용자 의도 변경으로 확인됨.
-- [x] `CLAUDE.md` 변경은 사용자 의도 변경으로 확인됨.
-- [x] `AI-Agents/PR.md` 변경은 별도 release/PR 담당 단계에서 다시 작성될 파일로 분리함.
+- [x] 변경 파일 목록에 `.env`, `.env.*`, secret, token, private key 없음.
+- [x] 개인 이미지 또는 개인정보 파일 변경 없음.
+- [x] `models/*.pt`, `models/*.pth`, `models/*.onnx` 변경 없음.
+- [x] 빌드/캐시 산출물 변경 없음.
+- [x] 변경 범위는 `AI-Agents/*.md`, `main_window.py`, `result_processor.py`로 제한됨.
 
 ## Follow-up
 
-- 실제 웹캠 환경에서 결과 표시, 나이 확신도, 반복 측정 흐름은 사용자가 수동 QA한다.
-- release/PR 담당 단계에서 `AI-Agents/PR.md`를 다시 작성하고, 그 시점에 `git diff --check`를 재확인한다.
+- 사용자는 push된 브랜치를 pull 받아 실제 GUI에서 화면 겹침, 버튼 상태, 결과 표시, histogram 가독성, 반복 측정 흐름을 수동 QA한다.
+- 로컬 `.venv`의 Python 경로를 복구한 뒤 전체 pytest를 다시 실행하는 것이 좋다.
