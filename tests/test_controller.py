@@ -60,6 +60,8 @@ def test_second_measurement_after_redetect(qapp, tmp_path):
 
     controller.request_measurement()
     assert controller.state == AppState.COUNTDOWN
+    assert controller.metrics.is_active is True
+    assert "measurement_requested" in controller.metrics._marks
     controller.countdown_timer.stop()
 
 

@@ -157,6 +157,13 @@ class SystemController(QObject):
             self.status_changed.emit("[Single] 얼굴이 준비되지 않았습니다.")
             return
 
+        if not self.metrics.is_active:
+            self.metrics.start_run(camera_index=self.camera_index)
+            self.metrics.mark("camera_start_requested")
+            self.metrics.mark("camera_started")
+            self.metrics.mark("first_face_ready")
+            self.heartbeat_timer.start()
+
         self.metrics.mark("measurement_requested")
         self._set_state(AppState.COUNTDOWN)
         self.countdown_value = 3
