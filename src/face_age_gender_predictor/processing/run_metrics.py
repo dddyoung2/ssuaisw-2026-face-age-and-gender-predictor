@@ -88,7 +88,7 @@ class RunMetricLogger:
         result: Optional[dict] = None,
     ) -> RunSummary:
         if not self._active:
-            self.start_run(camera_index=-1)
+            raise RuntimeError("cannot finish metrics before start_run()")
 
         self.event("run_finished", success=success, reason=reason)
         durations = self._build_durations()

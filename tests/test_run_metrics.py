@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from face_age_gender_predictor.processing.run_metrics import RunMetricLogger
 
 
@@ -28,3 +30,12 @@ def test_run_metric_logger_writes_threaded_summary(tmp_path):
     assert payload["mode"] == "threaded"
     assert payload["success"] is True
     assert len(payload["events"]) >= 2
+
+
+def test_finish_without_active_run_does_not_write_fake_log(tmp_path):
+    logger = RunMetricLogger(log_dir=tmp_path, mode="threaded")
+
+    with pytest.raises(RuntimeError, match="cannot finish metrics"):
+        logger.finish(success=True, result={"success": True})
+
+    assert list(tmp_path.iterdir()) == []

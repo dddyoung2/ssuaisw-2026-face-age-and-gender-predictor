@@ -353,12 +353,15 @@ class SystemController(QObject):
             success=bool(result.get("success")),
             valid_count=result.get("valid_count"),
         )
-        summary = self.metrics.finish(
-            success=bool(result.get("success")),
-            reason=result.get("reason"),
-            result=result,
-        )
-        print(summary.to_terminal_text())
+        if self.metrics.is_active:
+            summary = self.metrics.finish(
+                success=bool(result.get("success")),
+                reason=result.get("reason"),
+                result=result,
+            )
+            print(summary.to_terminal_text())
+        else:
+            print("[Sys][WARN] inactive metrics; result was not written to logs")
         self.heartbeat_timer.stop()
         self._return_to_idle()  # 재측정 가능한 IDLE 상태로 복귀
 
