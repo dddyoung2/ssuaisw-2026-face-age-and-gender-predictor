@@ -60,6 +60,8 @@ def test_second_measurement_after_redetect(qapp):
     # 2차 측정 시작 가능 (COUNTDOWN 진입)
     controller.request_measurement()
     assert controller.state == AppState.COUNTDOWN
+    assert controller.metrics.is_active is True
+    assert "measurement_requested" in controller.metrics._marks
     controller.countdown_timer.stop()
 
 

@@ -238,6 +238,13 @@ class SystemController(QObject):
             self.status_changed.emit("[Sys] 얼굴이 준비되지 않았습니다.")  # 안내
             return  # 함수 종료
 
+        if not self.metrics.is_active:
+            self.metrics.start_run(camera_index=self.camera_index)
+            self.metrics.mark("camera_start_requested")
+            self.metrics.mark("camera_started")
+            self.metrics.mark("first_face_ready")
+            self.heartbeat_timer.start()
+
         self.metrics.mark("measurement_requested")
         self._set_state(AppState.COUNTDOWN)  # 상태를 COUNTDOWN으로 변경 (측정 버튼 비활성화)
         self.countdown_value = 3  # 카운트다운 값을 3으로 초기화
