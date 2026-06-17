@@ -309,12 +309,15 @@ class SystemController(QObject):
             )
 
         self.result_ready.emit(result)
-        summary = self.metrics.finish(
-            success=bool(result.get("success")),
-            reason=result.get("reason"),
-            result=result,
-        )
-        print(summary.to_terminal_text())
+        if self.metrics.is_active:
+            summary = self.metrics.finish(
+                success=bool(result.get("success")),
+                reason=result.get("reason"),
+                result=result,
+            )
+            print(summary.to_terminal_text())
+        else:
+            print("[Single][WARN] inactive metrics; result was not written to logs")
         self.heartbeat_timer.stop()
         self._return_to_idle()
 
