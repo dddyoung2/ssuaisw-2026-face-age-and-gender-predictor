@@ -1,63 +1,91 @@
 # REVIEW
 
-- Verdict: PASS
+## Verdict: PASS
+
+Claude의 QA Fix 이후 나이 확신도 수식 변경, invalid `age_probs` 방어, result_processor 성별 집계 기준 확인/테스트가 TASK.md와 ACCEPTANCE.md 요구사항을 만족한다. 자동 테스트와 추가 smoke도 통과했다.
+
+현재 diff에는 `.gitignore`, `CLAUDE.md`, `AI-Agents/PR.md` 변경이 남아 있으나, 사용자 확인에 따라 `.gitignore`와 `CLAUDE.md`는 사용자 의도 변경이며, `AI-Agents/PR.md`는 이후 별도 release/PR 담당 단계에서 다시 작성될 파일로 분리한다. 따라서 이 세 파일은 이번 구현 코드 품질의 blocker로 보지 않는다.
 
 ## Findings
 
-- No blocking implementation defect was found in the reviewed diff.
-- Previous `NEEDS_FIX` item for age confidence is resolved. `AgeEstimatorWindow._compute_age_confidence()` now sums the probability mass for predicted age +/- 2 years, clips the age window to the valid 15..40 class range, and clamps the displayed value to 0..100%.
-- New age-confidence tests cover the +/-2 year window, clamp-to-100 behavior, age-range boundary clipping, and empty/None inputs.
-- The re-measurement preview bug remains addressed in code: the GUI stores `captured_frame` / `captured_face_box` during COUNTDOWN/COLLECTING and uses that snapshot for the result face preview instead of relying only on the latest live detection frame.
-- The offscreen GUI preview test verifies the normal recovery path: first measurement result, return to detection, face ready again, re-enabled measurement button path, and next result preview is non-empty.
-- `AI-Agents/PR.md` is modified even though PR documentation is release-owner territory. The content is a placeholder saying Claude must not write/update the file, so QA does not treat it as a functional blocker, but owner confirmation is recommended before commit.
-- `scripts/test_run.py` appears in `git status`, but `git diff -- scripts/test_run.py` shows no content diff. This looks like line-ending/status noise rather than a substantive unrelated change.
+- Blocking implementation defect는 발견하지 못했다.
+- 이전 QA의 invalid `age_probs` GUI 표시 예외는 해결되었다.
+  - NaN/Inf/비숫자/음수/wrong length/합 0 입력은 나이 확신도 `-`와 빈 히스토그램으로 안전하게 처리된다.
+  - 추가 smoke 결과: `nan_age_probs_display_ok=True`, `age_conf_text=-`, `histogram_empty=True`.
+- `AI-Agents/PR.md`에는 trailing whitespace가 남아 있어 전체 `git diff --check`는 실패한다. 다만 PR 문서는 별도 release/PR 담당 단계에서 다시 작성될 예정이므로 이번 구현 PASS의 blocker로 보지 않는다.
+- `.gitignore`와 `CLAUDE.md` 변경은 사용자 의도 변경으로 확인되어 이번 구현 scope 문제로 보지 않는다.
 
 ## Requirement Coverage
 
-- Re-measurement flow: covered by controller/camera tests and the window preview test. Success/failure returns to IDLE, detection resume is requested, the measurement button can be re-enabled after face readiness, and a next measurement can start without restarting the app.
-- Result face preview after re-enabled measurement: covered by offscreen GUI test at the non-blank preview level. Real webcam confirmation remains Not Verified.
-- Age confidence display: covered. The GUI no longer uses only `max(age_probs) * 100`; it now uses predicted age +/- 2 years and clamps the display to 0..100%.
-- Model integration: covered. `InferenceWorker` delegates to `CNNmodel.predict_frames`, random predictions were removed from the production path, the default model path resolves from the repository root, model loading is lazy/cached, and missing model errors name the expected path.
-- Real TorchScript contract: covered outside GUI. The local `models/Best_Age_Estimate_model_traced.pt` loads on CPU and returns 4 outputs with shapes `[1]`, `[1]`, `[1, 26]`, `[1]`; `age_probs` sums to 1.0.
-- QThread separation: covered by code structure. Camera capture remains in `CameraBridgeWorker` / `CameraDetector`; model preprocessing and forward pass are routed through `InferenceWorker` in `InferenceThread`. `main_app` preloads the `torch` DLL before PyQt5 to avoid a Windows DLL issue, but it does not load the model or run inference in the GUI thread.
-- Guardrails: no tracked `.env`, secret, personal image, or model artifact was found. The local `models/` directory is ignored.
+| Requirement | Status | Notes |
+| --- | --- | --- |
+| age confidence uses weighted stddev | PASS | 26-bin weighted stddev helper 확인. |
+| age bins are 15..40 inclusive | PASS | `AGE_CONF_BIN_COUNT = 26`, `AGE_CONF_AGE_MIN = 15`. |
+| stddev 1.57 maps to 99% | PASS | helper/test 확인. |
+| stddev 8.23 maps to 1% | PASS | helper/test 확인. |
+| clamp behavior | PASS | lower/upper clamp 테스트 존재. |
+| unnormalized positive weights normalize | PASS | helper/test 확인. |
+| invalid input avoids high confidence | PASS | helper는 `None`, GUI는 `-` + 빈 히스토그램 처리. |
+| old ±2 year heuristic removed | PASS | displayed confidence path는 stddev helper로 교체됨. |
+| gender confidence unchanged | PASS | 표시/집계 정책 변경 없음. |
+| age histogram visualization retained | PASS | valid 분포는 기존 히스토그램 표시 유지, invalid는 빈 히스토그램. |
+| GUI display path updated | PASS | `_show_success_result()`가 새 helper를 사용한다. |
+| result_processor average_gender >= 0.5 -> gender 1 | PASS | 기존 구현과 테스트 일치. |
+| result_processor average_gender < 0.5 -> gender 0 | PASS | 테스트 보강됨. |
+| average_gender == 0.5 -> gender 1 | PASS | 경계 테스트 보강됨. |
+| gender 1 displays as 여성 | PASS | `_gender_label(1) == "여성"`. |
+| gender 0 displays as 남성 | PASS | `_gender_label(0) == "남성"`. |
+| age average unchanged | PASS | `result_processor.py` 미수정, 테스트 확인. |
+| gender_confidence average unchanged | PASS | 테스트 확인. |
+| valid_count < 30 failure unchanged | PASS | 테스트 확인. |
+| model output label contract documented or marked Not Verified | PASS | `IMPLEMENTATION.md`에 Not Verified 기록. |
+| tests updated/passing | PASS | 전체 76개, 대상 47개 통과. |
+| forbidden/out-of-scope files | PASS WITH NOTE | `.gitignore`/`CLAUDE.md`는 사용자 의도 변경, `PR.md`는 별도 release 단계 파일로 분리. |
 
 ## Test Results
 
-- `.\.venv\Scripts\python.exe -m pytest -q`
-  - Result: PASS - `41 passed in 0.31s`
-- `.\.venv\Scripts\python.exe -m py_compile src\face_age_gender_predictor\app\main_window.py src\face_age_gender_predictor\app\main_app.py src\face_age_gender_predictor\app\workers.py src\face_age_gender_predictor\camera\camera_detector.py src\face_age_gender_predictor\inference\CNNmodel.py`
-  - Result: PASS
-- `git diff --check`
-  - Result: PASS; only Git line-ending warnings were printed.
-- `.\.venv\Scripts\python.exe -m pip check`
-  - Result: PASS - `No broken requirements found.`
-- `.\.venv\Scripts\python.exe -c "import mediapipe as mp, cv2, numpy as np; ..."`
-  - Result: PASS - `mediapipe 0.10.21`, `mp.solutions=True`, `cv2 4.11.0`, `numpy 1.26.4`
-- Real model smoke:
-  - Command loaded `CNNmodel.load_model()` and ran `_run_model()` with a zero `224x224` RGB input.
-  - Result: PASS - device `cpu`, output count `4`, shapes `[1]`, `[1]`, `[1, 26]`, `[1]`, `age_probs_sum=1.0`.
-- `.\.venv\Scripts\python.exe -c "import face_age_gender_predictor.app.main_app as app; ..."`
-  - Result: PASS - `main_app import ok IDLE`
+```text
+명령: .\.venv\Scripts\python.exe -m pytest -q --basetemp "C:\Users\Public\Documents\ESTsoft\CreatorTemp\pytest-age-confidence-qa2"
+결과: PASS - 76 passed, 1 warning in 0.24s
+비고: pytest cache path 생성 권한 warning 발생
+
+명령: .\.venv\Scripts\python.exe -m pytest tests\test_main_window.py tests\test_result_processor.py -q --basetemp "C:\Users\Public\Documents\ESTsoft\CreatorTemp\pytest-age-confidence-qa2-target"
+결과: PASS - 47 passed, 1 warning in 0.16s
+비고: pytest cache path 생성 권한 warning 발생
+
+명령: .\.venv\Scripts\python.exe -m py_compile src\face_age_gender_predictor\app\main_window.py src\face_age_gender_predictor\processing\result_processor.py
+결과: PASS
+
+명령: invalid NaN age_probs GUI display smoke
+결과: PASS - nan_age_probs_display_ok=True, age_conf_text=-, histogram_empty=True
+
+명령: git diff --check -- src\face_age_gender_predictor\app\main_window.py tests\test_main_window.py tests\test_result_processor.py AI-Agents\IMPLEMENTATION.md AI-Agents\REVIEW.md
+결과: PASS
+
+명령: git diff --check
+결과: FAIL - AI-Agents/PR.md trailing whitespace
+판정: PR.md는 별도 release/PR 담당 단계에서 다시 작성될 파일이므로 이번 구현 QA blocker로 보지 않음.
+```
 
 ## Not Verified
 
-- Real webcam GUI end-to-end after the latest fixes: first measurement, result face photo displayed, automatic return to detection, face re-detected, measurement button re-enabled, user starts the next measurement, next result face photo displayed, and age confidence visually reads as expected.
-- Full `main_app` runtime with an actual camera and the real model through `InferenceThread`.
-- Missing-model error appearance in the actual PyQt window, because the model file is currently present locally.
-- Camera resource release on real app close after multiple measurements.
-- Whether the offscreen preview test would catch a stale first-measurement image being reused for the next measurement; it currently catches blank preview regressions.
+- 실제 웹캠 GUI end-to-end 수동 QA는 수행하지 않았다. 사용자가 커밋 후 pull해서 실제 환경에서 진행할 영역이다.
+- 실제 모델 파일 연결/모델 label 의미 검증은 이번 task 범위가 아니다.
+- 모델의 실제 학습 label이 `gender == 1 -> 여성`, `gender == 0 -> 남성`인지 코드는 보장하지 않는다. 앱 내부 downstream contract만 확인했다.
+- age confidence 표시 자릿수는 현재 `.1f%`다. TASK 예시는 `99.00%` 계열이지만 기존 gender confidence 표시와의 일관성을 우선했다.
 
 ## Security / Privacy Check
 
-- `git ls-files .env .env.local *.pt *.pth *.onnx models` returned no tracked forbidden files.
-- `models/Best_Age_Estimate_model_traced.pt` exists locally and is about 601 MB, but `git status --short --ignored models` reports `!! models/`, so it is ignored and not staged/tracked.
-- No `.env`, secret, personal image, or model artifact appears in `git status`.
-- Current changed files are within the stated implementation/test/documentation scope, except `AI-Agents/PR.md`, which should be owner-confirmed because PR docs are release-owner territory.
-- New tests are untracked and must be intentionally added if this implementation is committed: `tests/conftest.py`, `tests/test_cnnmodel.py`, `tests/test_controller.py`, `tests/test_main_window.py`, `tests/test_window_preview.py`.
+- [x] `.env`, `.env.local`, secret 파일은 tracked 변경 목록에 없다.
+- [x] `models/`는 ignored 상태이며 tracked 모델 파일은 없다.
+- [x] `*.pt`, `*.pth`, `*.onnx` tracked 파일은 없다.
+- [x] 개인 이미지 또는 개인정보 파일 변경은 확인되지 않았다.
+- [x] Git commit/push/PR 생성은 수행되지 않았다.
+- [x] `.gitignore` 변경은 사용자 의도 변경으로 확인됨.
+- [x] `CLAUDE.md` 변경은 사용자 의도 변경으로 확인됨.
+- [x] `AI-Agents/PR.md` 변경은 별도 release/PR 담당 단계에서 다시 작성될 파일로 분리함.
 
 ## Follow-up
 
-- Run the real webcam GUI scenario on the user's machine before final release sign-off.
-- If time allows, strengthen `tests/test_window_preview.py` so the second measurement uses a visually distinct frame and asserts the preview changed, not only that it is non-empty.
-- Confirm whether the current `AI-Agents/PR.md` placeholder change is user/Codex Release approved before committing.
+- 실제 웹캠 환경에서 결과 표시, 나이 확신도, 반복 측정 흐름은 사용자가 수동 QA한다.
+- release/PR 담당 단계에서 `AI-Agents/PR.md`를 다시 작성하고, 그 시점에 `git diff --check`를 재확인한다.

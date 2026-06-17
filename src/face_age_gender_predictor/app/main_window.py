@@ -15,6 +15,7 @@ SystemController와 WorkerThread가 담당하고, GUI는 다음만 책임진다.
 없으므로 카메라/추론 동작 없이 빈 창만 뜬다. 정식 진입점은 `app.main_app`이다.
 """
 
+import math
 import sys
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -225,6 +226,87 @@ class AgeHistogramWidget(QWidget):
                     Qt.AlignCenter,
                     str(age),
                 )
+
+
+# ====================================================================
+# 나이 확신도(age confidence) 계산 — 26-bin(15~40세) 분포의 weighted stddev 기반
+# ====================================================================
+
+# 나이 분포는 15..40세 26개 bin이다.
+AGE_CONF_BIN_COUNT = 26
+AGE_CONF_AGE_MIN = 15
+
+# test data 검증으로 얻은 실효 표준편차 범위와 confidence 매핑 상수.
+# 표준편차가 작을수록(분포가 좁을수록) 확신도가 높다.
+AGE_CONF_STDDEV_BEST = 1.57    # 이 이하면 99%
+AGE_CONF_STDDEV_WORST = 8.23   # 이 이상이면 1%
+AGE_CONF_CONFIDENCE_BEST = 99.0
+AGE_CONF_CONFIDENCE_WORST = 1.0
+
+
+def age_distribution_stddev(age_probs) -> Optional[float]:
+    """26-bin 나이 분포(15..40)의 weighted standard deviation을 반환한다.
+
+    - normalized probability든 unnormalized positive weight든, 합이 0보다 크면
+      normalize 후 사용한다.
+    - 유효하지 않은 분포(None / 길이 != 26 / 숫자가 아닌 값 / NaN·Inf / 음수 /
+      합 <= 0)면 None을 반환한다. (절대 높은 confidence로 fallback하지 않기 위함)
+    """
+    if age_probs is None or isinstance(age_probs, (str, bytes)):
+        return None
+
+    try:
+        values = list(age_probs)
+    except TypeError:
+        return None
+
+    if len(values) != AGE_CONF_BIN_COUNT:
+        return None
+
+    weights = []
+    for v in values:
+        # bool은 int의 하위 타입이지만 확률 값으로 보지 않는다.
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        if not math.isfinite(v):
+            return None
+        if v < 0:
+            return None
+        weights.append(float(v))
+
+    total = sum(weights)
+    if total <= 0:
+        return None
+
+    norm = [w / total for w in weights]
+    ages = [AGE_CONF_AGE_MIN + i for i in range(AGE_CONF_BIN_COUNT)]
+    mean = sum(norm[i] * ages[i] for i in range(AGE_CONF_BIN_COUNT))
+    variance = sum(norm[i] * (ages[i] - mean) ** 2 for i in range(AGE_CONF_BIN_COUNT))
+    if variance < 0:  # 부동소수점 안전장치
+        variance = 0.0
+    return math.sqrt(variance)
+
+
+def age_confidence_from_stddev(stddev: float) -> float:
+    """표준편차 -> confidence(%) inverse linear mapping. [1.0, 99.0]로 clamp한다.
+
+        ratio = (stddev - BEST) / (WORST - BEST)
+        confidence = CONFIDENCE_BEST - ratio * (CONFIDENCE_BEST - CONFIDENCE_WORST)
+    """
+    span = AGE_CONF_STDDEV_WORST - AGE_CONF_STDDEV_BEST
+    ratio = (stddev - AGE_CONF_STDDEV_BEST) / span
+    confidence = AGE_CONF_CONFIDENCE_BEST - ratio * (
+        AGE_CONF_CONFIDENCE_BEST - AGE_CONF_CONFIDENCE_WORST
+    )
+    return min(AGE_CONF_CONFIDENCE_BEST, max(AGE_CONF_CONFIDENCE_WORST, confidence))
+
+
+def age_confidence_percent(age_probs) -> Optional[float]:
+    """26-bin 나이 분포 -> age confidence(%). 유효하지 않으면 None."""
+    stddev = age_distribution_stddev(age_probs)
+    if stddev is None:
+        return None
+    return age_confidence_from_stddev(stddev)
 
 
 class AgeEstimatorWindow(QMainWindow):
@@ -813,26 +895,22 @@ class AgeEstimatorWindow(QMainWindow):
     # 결과 표시
     # ====================================================================
 
-    @classmethod
-    def _compute_age_confidence(cls, age_probs, predicted_age) -> float:
-        """예측 나이 ±2세 윈도우의 확률 질량(%)을 반환한다.
+    @staticmethod
+    def _compute_age_confidence(age_probs) -> Optional[float]:
+        """26-bin 나이 분포(15~40세)의 weighted standard deviation 기반 age confidence(%).
 
-        모델의 26-클래스(15~40세) 확률분포에서, 예측 나이를 중심으로 ±2세 범위에 속하는
-        클래스 확률을 합산한다. 유효 클래스 범위(AGE_MIN~AGE_MAX) 밖의 나이는 제외하고,
-        표시값은 0~100%로 clamp한다.
+        표준편차가 작을수록(분포가 좁을수록) 확신도가 높다.
+        - stddev 1.57 -> 99%, stddev 8.23 -> 1% (inverse linear, [1, 99] clamp)
+        - 유효하지 않은 분포면 None을 반환한다(높은 confidence로 fallback하지 않음).
+
+        실제 계산은 모듈 레벨 pure helper(`age_confidence_percent`)에 위임한다.
         """
-        if not age_probs or predicted_age is None:
-            return 0.0
+        return age_confidence_percent(age_probs)
 
-        center = int(round(predicted_age))
-        total = 0.0
-        for age in range(center - 2, center + 3):  # center-2 .. center+2 (5개)
-            if cls.AGE_MIN <= age <= cls.AGE_MAX:
-                index = age - cls.AGE_MIN
-                if 0 <= index < len(age_probs):
-                    total += age_probs[index]
-
-        return min(100.0, max(0.0, total * 100.0))
+    @staticmethod
+    def _gender_label(gender) -> str:
+        """앱 내부 label contract: gender == 1 -> 여성, 그 외(0) -> 남성."""
+        return "여성" if gender == 1 else "남성"
 
     def _show_success_result(self, result: dict) -> None:
         # 이번 측정에서 고정한 캡처 스냅샷으로 얼굴 미리보기를 만든다.
@@ -850,20 +928,27 @@ class AgeEstimatorWindow(QMainWindow):
         age_probs = result.get("age_probs") or [0.0] * 26
         gender_confidence = result.get("gender_confidence") or 0.0
 
-        gender_text = "여성" if gender == 1 else "남성"
+        gender_text = self._gender_label(gender)
         self.set_gender(gender_text)
         self.set_age_result(f"{age:.0f}세" if age is not None else "-")
         self.set_gender_confidence(f"{gender_confidence * 100:.1f}%")
 
-        # 나이 확신도: 예측 나이 ±2세 윈도우의 확률 질량을 사용자 지표로 사용
-        # (단일 클래스 최댓값은 값이 너무 낮아 "나이 확신도" 라벨과 맞지 않음)
-        age_confidence = self._compute_age_confidence(age_probs, age)
-        self.set_age_confidence(f"{age_confidence:.1f}%")
-
-        # 히스토그램: age_probs(26개)를 정수 스케일로 표시 (위젯이 최대값 기준 정규화)
-        histogram_values = [int(round(p * 1000)) for p in age_probs]
-        self.age_histogram_values = histogram_values
-        self.age_histogram.set_values(histogram_values)
+        # 나이 확신도: 26-bin(15~40세) 분포의 weighted stddev 기반 confidence.
+        # 유효하지 않은 분포면 높은 confidence로 fallback하지 않고 "-"(unavailable)로 표시한다.
+        # invalid 분포(NaN/Inf/비숫자/길이 불일치/합<=0 등)는 confidence뿐 아니라
+        # 히스토그램 변환(int(round(p*1000)))에서도 예외를 낼 수 있으므로, 동일한 유효성
+        # 판단으로 묶어 처리한다: 유효하면 표시 + 히스토그램, 유효하지 않으면 "-" + 빈 히스토그램.
+        age_confidence = self._compute_age_confidence(age_probs)
+        if age_confidence is None:
+            self.set_age_confidence("-")
+            self.age_histogram_values = [0] * 26
+            self.age_histogram.clear_values()
+        else:
+            self.set_age_confidence(f"{age_confidence:.1f}%")
+            # 히스토그램: age_probs(26개)를 정수 스케일로 표시 (위젯이 최대값 기준 정규화)
+            histogram_values = [int(round(p * 1000)) for p in age_probs]
+            self.age_histogram_values = histogram_values
+            self.age_histogram.set_values(histogram_values)
 
         self.helper_label.setText(
             f"측정 완료 — 유효 프레임 {result.get('valid_count')}개로 분석했습니다."
