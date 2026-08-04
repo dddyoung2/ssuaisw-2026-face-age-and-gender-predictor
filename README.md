@@ -11,9 +11,8 @@
 
 ## 팀원 및 역할 소개 (Team Members & Roles)
 * [김도영](https://github.com/dddyoung2) - 시스템 통합 (System Architect / QA)
-* [김철현](https://github.com/cheolhyun-kim) - **팀장** & 딥러닝 모델 (**Team Leader** & DL Model Engineer)
+* [김철현](https://github.com/cheolhyun-kim) - **팀장** & 딥러닝 모델 (**Team Leader** & DL Model Engineer), 데이터 전처리(Preprocessing Engineer)
 * [유승민](https://github.com/s-min04) - GUI 개발(UI/UX Design)
-* [이용욱]() - 데이터 전처리(Preprocessing Engineer)
 * [이준혁](https://github.com/norussi) - 인퍼런스 엔진 및 컴퓨터 비전 (Inference Engineer & Computer Vision)
 
 ## 주요 기능
